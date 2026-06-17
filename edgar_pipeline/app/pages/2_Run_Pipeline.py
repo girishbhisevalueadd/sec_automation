@@ -17,7 +17,7 @@ for _p in (_APP_DIR, _PIPELINE_ROOT):
         sys.path.insert(0, str(_p))
 
 logger = logging.getLogger(__name__)
-logger.info("Page load: 2_Run_Pipeline")
+logger.debug("Page load: 2_Run_Pipeline")
 
 from app_utils import get_effective_watchlist, get_mime_type, inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
@@ -199,6 +199,14 @@ with right:
 
         thread_alive = ss["pipeline_thread"] and ss["pipeline_thread"].is_alive()
         last_line = ss["pipeline_output"][-1] if ss["pipeline_output"] else ""
+
+        # Failsafe: if the worker thread has finished but for some reason
+        # no terminal marker reached us yet, synthesise one. This prevents
+        # the page from spinning forever after a crash inside the thread.
+        if not thread_alive and "[DONE]" not in last_line and "[ERROR]" not in last_line:
+            logger.warning("Pipeline thread died without a terminal marker - synthesising [DONE]")
+            ss["pipeline_output"].append("[FAILSAFE] [DONE] worker thread exited unexpectedly")
+            last_line = ss["pipeline_output"][-1]
 
         if "[DONE]" in last_line or "[ERROR]" in last_line:
             # Move to next form or next ticker

@@ -17,7 +17,7 @@ for _p in (_APP_DIR, _PIPELINE_ROOT):
         sys.path.insert(0, str(_p))
 
 logger = logging.getLogger(__name__)
-logger.info("Page load: 3_Financials")
+logger.debug("Page load: 3_Financials")
 
 from app_utils import inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402

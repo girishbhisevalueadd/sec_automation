@@ -21,7 +21,7 @@ for _p in (_APP_DIR, _PIPELINE_ROOT):
         sys.path.insert(0, str(_p))
 
 logger = logging.getLogger(__name__)
-logger.info("Page load: 5_Downloads")
+logger.debug("Page load: 5_Downloads")
 
 from app_utils import get_chart_colors, get_plotly_template, inject_css, list_output_files  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402

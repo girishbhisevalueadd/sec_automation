@@ -57,6 +57,10 @@ def run_pipeline_with_output(
     )
     push(f"[{_ts()}] [START] Pipeline started for {ticker} (form={form}, limit={limit}, force_refresh={force_refresh})")
 
+    # Import backend modules - any ImportError here usually means an
+    # environment problem (corrupt venv, pip cache, edgartools version).
+    # Catch it explicitly so the UI shows a useful message instead of
+    # spinning forever.
     try:
         from fetcher import fetch_company_filings
         import storage
@@ -64,6 +68,18 @@ def run_pipeline_with_output(
         import model_builder
         import report_writer
         import narrative as narrative_mod
+    except ImportError as e:  # noqa: BLE001
+        logger.exception("Backend import failed: %s", e)
+        push(f"[{_ts()}] [ERROR] Backend module import failed: {e}")
+        push(
+            f"[{_ts()}] [INFO] Likely fix: reinstall the failing package. "
+            f"For edgartools issues:  pip install --force-reinstall --no-deps 'edgartools>=5.30,<6.0'"
+        )
+        push(traceback.format_exc())
+        push(f"[{_ts()}] [DONE] Pipeline aborted (errored).")
+        return
+
+    try:
 
         filings_data: list[dict] = []
 
@@ -169,6 +185,11 @@ def run_pipeline_with_output(
         logger.exception("Pipeline run errored for %s: %s", ticker, e)
         push(f"[{_ts()}] [ERROR] {e}")
         push(traceback.format_exc())
+        # CRITICAL: emit a terminal marker as the LAST line so the UI's
+        # rerun loop sees it and stops. Without this the page spins
+        # forever because the last-line marker check would land on the
+        # traceback instead of [ERROR] / [DONE].
+        push(f"[{_ts()}] [DONE] Pipeline aborted (errored).")
 
 
 def start_pipeline_thread(

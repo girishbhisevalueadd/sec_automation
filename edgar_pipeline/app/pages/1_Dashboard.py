@@ -20,7 +20,7 @@ for _p in (_APP_DIR, _PIPELINE_ROOT):
         sys.path.insert(0, str(_p))
 
 logger = logging.getLogger(__name__)
-logger.info("Page load: 1_Dashboard")
+logger.debug("Page load: 1_Dashboard")
 
 from app_utils import (  # noqa: E402
     get_chart_colors,

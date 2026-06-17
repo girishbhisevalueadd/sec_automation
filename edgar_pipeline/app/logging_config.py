@@ -100,6 +100,11 @@ def setup_logging(level: int | str = "INFO") -> logging.Logger:
     for noisy in ("urllib3", "matplotlib", "fontTools"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
+    # Backend `storage` logs "SQLite schema ready" at INFO every time a
+    # connection opens, which floods the UI log during rerun loops.
+    # Storage's WARN/ERROR messages still surface unchanged.
+    logging.getLogger("storage").setLevel(logging.WARNING)
+
     _CONFIGURED = True
     root.info("Streamlit UI logging initialized -> %s (level=%s)", UI_LOG_PATH, level)
     root.info(

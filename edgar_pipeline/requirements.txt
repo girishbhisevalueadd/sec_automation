@@ -1,4 +1,7 @@
-edgartools>=2.26
+# edgartools pinned to a range known to expose the 5.x XBRL API used by
+# fetcher.py (filing.xbrl().statements.income_statement().to_dataframe()).
+# 5.6.x is too old; 6.x may break the API again.
+edgartools>=5.30,<6.0
 pandas>=2.0
 openpyxl>=3.1
 python-docx>=1.1
