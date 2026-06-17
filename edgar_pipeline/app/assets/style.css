@@ -45,6 +45,41 @@ html, body, [class*="css"], .stApp {
     color: var(--text);
 }
 
+/* Hide Streamlit's auto-generated multipage navigation. We render our
+   own navigation inside components/sidebar.py and pair it with the
+   company branding at the top - keeping both would duplicate every link. */
+[data-testid="stSidebarNav"] { display: none !important; }
+
+/* Tighten the gap between the top of the page and the first heading.
+   Streamlit's default .block-container has padding-top: 6rem to clear
+   its top-right deploy/menu buttons, which leaves a big empty band
+   above our content. */
+.main .block-container,
+[data-testid="stMainBlockContainer"] {
+    padding-top: 1.5rem !important;
+}
+
+/* Sidebar: hide the empty decoration band Streamlit puts above the
+   first widget, and pull our content all the way to the top. */
+[data-testid="stSidebar"] > div:first-child,
+[data-testid="stSidebarContent"],
+[data-testid="stSidebarUserContent"] {
+    padding-top: 0.4rem !important;
+    margin-top: 0 !important;
+}
+[data-testid="stSidebar"] [data-testid="stDecoration"] {
+    display: none !important;
+}
+[data-testid="stSidebar"] section[data-testid="stSidebarHeader"] {
+    padding: 0 !important;
+    min-height: 0 !important;
+}
+/* Defensive: zero out the first child element block's top margin too */
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div:first-child {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
 h1, h2, h3, h4 {
     font-family: var(--sans);
     letter-spacing: -0.01em;
