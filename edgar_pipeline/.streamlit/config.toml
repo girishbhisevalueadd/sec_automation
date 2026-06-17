@@ -1,9 +1,13 @@
 [theme]
-base = "dark"
+# Default appearance is LIGHT. Users can switch to Dark via the sidebar
+# toggle - the choice persists in app/theme_preference.json. The CSS layer
+# does the heavy lifting; this section just keeps the Streamlit chrome
+# (header, modal dialogs) on a sensible default.
+base = "light"
 primaryColor = "#1D6FA4"
-backgroundColor = "#0E1117"
-secondaryBackgroundColor = "#1C2333"
-textColor = "#FAFAFA"
+backgroundColor = "#F4F6FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1B2030"
 font = "sans serif"
 
 [server]

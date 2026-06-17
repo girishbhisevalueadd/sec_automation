@@ -46,9 +46,9 @@ echo ========================================================
 "%PY%" -m streamlit run app\streamlit_app.py ^
     --server.port %PORT% ^
     --server.headless false ^
-    --theme.base dark ^
+    --theme.base light ^
     --theme.primaryColor "#1D6FA4" ^
-    --theme.backgroundColor "#0E1117" ^
-    --theme.secondaryBackgroundColor "#1C2333" ^
-    --theme.textColor "#FAFAFA" ^
+    --theme.backgroundColor "#F4F6FA" ^
+    --theme.secondaryBackgroundColor "#FFFFFF" ^
+    --theme.textColor "#1B2030" ^
     --browser.gatherUsageStats false

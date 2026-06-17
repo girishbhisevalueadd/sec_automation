@@ -23,7 +23,7 @@ for _p in (_APP_DIR, _PIPELINE_ROOT):
 logger = logging.getLogger(__name__)
 logger.info("Page load: 5_Downloads")
 
-from app_utils import inject_css, list_output_files  # noqa: E402
+from app_utils import get_chart_colors, get_plotly_template, inject_css, list_output_files  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
 from components.file_table import render_file_table  # noqa: E402
 
@@ -113,12 +113,14 @@ if total > 0:
         text=[humanize.naturalsize(s_xlsx), humanize.naturalsize(s_docx), humanize.naturalsize(s_pdf)],
         textposition="auto",
     ))
+    _c = get_chart_colors(st)
     fig.update_layout(
-        template="plotly_dark", height=240,
+        template=get_plotly_template(st), height=240,
         margin=dict(l=20, r=20, t=20, b=20),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(28,35,51,0.4)",
-        xaxis=dict(gridcolor="#2D3650"),
-        yaxis=dict(gridcolor="#2D3650", title="Bytes"),
+        paper_bgcolor=_c["paper_bgcolor"], plot_bgcolor=_c["plot_bgcolor"],
+        xaxis=dict(gridcolor=_c["gridcolor"]),
+        yaxis=dict(gridcolor=_c["gridcolor"], title="Bytes"),
+        font=dict(color=_c["font_color"]),
         showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})

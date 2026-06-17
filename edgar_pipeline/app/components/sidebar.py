@@ -17,10 +17,14 @@ if str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
 
 from app_utils import (  # noqa: E402
+    THEME_DARK,
+    THEME_LIGHT,
     add_to_watchlist,
     get_effective_watchlist,
+    get_theme,
     list_output_files,
     remove_from_watchlist,
+    set_theme,
 )
 from components.status_badge import badge_html  # noqa: E402
 
@@ -134,9 +138,34 @@ def render_sidebar() -> None:
             unsafe_allow_html=True,
         )
 
+        # ---- Theme toggle (bottom of sidebar) ----
+        current_theme = get_theme(st)
+        st.markdown(
+            '<div class="theme-toggle-wrap">'
+            '<div class="label">Appearance</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        labels = ["☀ Light", "🌙 Dark"]
+        values = [THEME_LIGHT, THEME_DARK]
+        idx = values.index(current_theme) if current_theme in values else 0
+        choice = st.radio(
+            "Theme",
+            options=labels,
+            index=idx,
+            horizontal=True,
+            label_visibility="collapsed",
+            key="sb_theme_radio",
+        )
+        new_theme = values[labels.index(choice)]
+        if new_theme != current_theme:
+            logger.info("Theme switched: %s -> %s", current_theme, new_theme)
+            set_theme(st, new_theme)
+            st.rerun()
+
         # ---- Footer ----
         st.markdown(
-            '<div style="position:absolute; bottom: 20px; font-size: 10px; color: var(--text-muted); font-family: var(--mono); letter-spacing: 0.06em;">'
+            '<div style="margin-top:18px; font-size: 10px; color: var(--text-muted); font-family: var(--mono); letter-spacing: 0.06em; text-align:center;">'
             'SEC EDGAR · Free · No API Key'
             '</div>',
             unsafe_allow_html=True,

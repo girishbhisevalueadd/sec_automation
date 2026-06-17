@@ -23,8 +23,10 @@ logger = logging.getLogger(__name__)
 logger.info("Page load: 1_Dashboard")
 
 from app_utils import (  # noqa: E402
+    get_chart_colors,
     get_effective_watchlist,
     get_mime_type,
+    get_plotly_template,
     inject_css,
     list_output_files,
     parse_output_filename,
@@ -225,7 +227,7 @@ if wl:
                 hovertemplate="<b>%{x}</b>: $%{y:,.0f}<extra></extra>",
             ))
             fig.update_layout(
-                template="plotly_dark", height=110,
+                template=get_plotly_template(st), height=110,
                 margin=dict(l=0, r=0, t=10, b=10),
                 xaxis=dict(showgrid=False, visible=False),
                 yaxis=dict(showgrid=False, visible=False),

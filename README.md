@@ -210,6 +210,9 @@ navigation, and a **main area** with content.
   by typing them in the *Add Ticker* box and pressing *Add*. Remove
   tickers via the *Remove ticker* dropdown.
 - **Quick Stats:** A one-line summary of how much data you have.
+- **Appearance:** Toggle between **☀ Light** and **🌙 Dark** mode at the
+  bottom of the sidebar. The choice is remembered across reloads. Light
+  is the default.
 
 ### 🏠 Home (landing page)
 

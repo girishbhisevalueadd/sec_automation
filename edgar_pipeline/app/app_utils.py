@@ -24,7 +24,13 @@ if str(PIPELINE_ROOT) not in sys.path:
 
 ASSETS_DIR = APP_DIR / "assets"
 STYLE_FILE = ASSETS_DIR / "style.css"
+STYLE_DARK_FILE = ASSETS_DIR / "style_dark.css"
 WATCHLIST_OVERRIDE_FILE = APP_DIR / "watchlist_overrides.json"
+THEME_PREF_FILE = APP_DIR / "theme_preference.json"
+
+THEME_LIGHT = "light"
+THEME_DARK = "dark"
+DEFAULT_THEME = THEME_LIGHT
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +49,98 @@ def load_css() -> str:
         return ""
 
 
+def _load_dark_overrides() -> str:
+    try:
+        return STYLE_DARK_FILE.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.warning("style_dark.css missing at %s", STYLE_DARK_FILE)
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Theme management
+# ---------------------------------------------------------------------------
+def _read_theme_pref() -> str:
+    """Read persisted theme from disk. Returns DEFAULT_THEME on first run."""
+    if THEME_PREF_FILE.exists():
+        try:
+            data = json.loads(THEME_PREF_FILE.read_text(encoding="utf-8"))
+            theme = str(data.get("theme", DEFAULT_THEME)).lower()
+            if theme in (THEME_LIGHT, THEME_DARK):
+                return theme
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to read theme pref: %s", e)
+    return DEFAULT_THEME
+
+
+def _write_theme_pref(theme: str) -> None:
+    try:
+        THEME_PREF_FILE.write_text(
+            json.dumps({"theme": theme}, indent=2), encoding="utf-8"
+        )
+        logger.info("Persisted theme preference: %s", theme)
+    except OSError as e:
+        logger.warning("Failed to write theme pref: %s", e)
+
+
+def get_theme(st=None) -> str:
+    """Return the effective theme. Reads from session_state if available,
+    falls back to the on-disk preference file (default = light).
+    """
+    if st is not None:
+        try:
+            theme = st.session_state.get("ui_theme")
+            if theme in (THEME_LIGHT, THEME_DARK):
+                return theme
+        except Exception:  # noqa: BLE001
+            pass
+    return _read_theme_pref()
+
+
+def set_theme(st, theme: str) -> None:
+    """Persist the user's choice to both session_state and disk."""
+    theme = (theme or DEFAULT_THEME).lower()
+    if theme not in (THEME_LIGHT, THEME_DARK):
+        theme = DEFAULT_THEME
+    try:
+        st.session_state["ui_theme"] = theme
+    except Exception:  # noqa: BLE001
+        pass
+    _write_theme_pref(theme)
+    logger.info("set_theme: %s", theme)
+
+
+def get_plotly_template(st=None) -> str:
+    """Return the Plotly template name matching the current theme."""
+    return "plotly_dark" if get_theme(st) == THEME_DARK else "plotly_white"
+
+
+def get_chart_colors(st=None) -> dict:
+    """Return chart paper/plot bg + grid color tuned to the current theme."""
+    if get_theme(st) == THEME_DARK:
+        return {
+            "paper_bgcolor": "rgba(0,0,0,0)",
+            "plot_bgcolor":  "rgba(28,35,51,0.4)",
+            "gridcolor":     "#2D3650",
+            "font_color":    "#FAFAFA",
+        }
+    return {
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor":  "rgba(238,241,248,0.6)",
+        "gridcolor":     "#D5DBE7",
+        "font_color":    "#1B2030",
+    }
+
+
 def inject_css(st) -> None:
+    """Inject base CSS + (when dark) the dark-overrides on top."""
     css = load_css()
+    theme = get_theme(st)
+    if theme == THEME_DARK:
+        css += "\n\n/* === Dark overrides === */\n" + _load_dark_overrides()
     if css:
         st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
-        logger.debug("inject_css: injected %d bytes", len(css))
+        logger.debug("inject_css: theme=%s, injected %d bytes", theme, len(css))
 
 
 # ---------------------------------------------------------------------------

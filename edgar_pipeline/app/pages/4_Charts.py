@@ -20,7 +20,7 @@ for _p in (_APP_DIR, _PIPELINE_ROOT):
 logger = logging.getLogger(__name__)
 logger.info("Page load: 4_Charts")
 
-from app_utils import inject_css  # noqa: E402
+from app_utils import get_chart_colors, get_plotly_template, inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
 
 inject_css(st)
@@ -72,16 +72,17 @@ def _row(stmt: pd.DataFrame, candidates: list[str]) -> pd.Series:
 
 
 def _layout(title: str, height: int = 320) -> dict:
+    colors = get_chart_colors(st)
     return dict(
-        template="plotly_dark",
-        title=dict(text=title, font=dict(size=15, color="#FAFAFA")),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(28,35,51,0.4)",
+        template=get_plotly_template(st),
+        title=dict(text=title, font=dict(size=15, color=colors["font_color"])),
+        paper_bgcolor=colors["paper_bgcolor"],
+        plot_bgcolor=colors["plot_bgcolor"],
         height=height,
         margin=dict(l=40, r=20, t=40, b=40),
-        font=dict(color="#FAFAFA", family="Inter"),
-        xaxis=dict(gridcolor="#2D3650"),
-        yaxis=dict(gridcolor="#2D3650"),
+        font=dict(color=colors["font_color"], family="Inter"),
+        xaxis=dict(gridcolor=colors["gridcolor"]),
+        yaxis=dict(gridcolor=colors["gridcolor"]),
     )
 
 
@@ -192,7 +193,8 @@ with row3c1:
         if cats:
             fig = go.Figure()
             fig.add_trace(go.Scatterpolar(r=vals + [vals[0]], theta=cats + [cats[0]], fill="toself", line=dict(color=PALETTE["teal"], width=2), fillcolor="rgba(15,158,117,0.30)"))
-            fig.update_layout(**_layout(f"Ratios Radar ({latest_col})"), polar=dict(bgcolor="rgba(28,35,51,0.4)", radialaxis=dict(gridcolor="#2D3650")))
+            _c = get_chart_colors(st)
+            fig.update_layout(**_layout(f"Ratios Radar ({latest_col})"), polar=dict(bgcolor=_c["plot_bgcolor"], radialaxis=dict(gridcolor=_c["gridcolor"])))
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True, "displaylogo": False})
         else:
             st.info("Not enough ratio values to render radar.")

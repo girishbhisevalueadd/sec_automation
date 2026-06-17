@@ -71,6 +71,7 @@ logs/
 
 # --- Streamlit UI runtime ---
 edgar_pipeline/app/watchlist_overrides.json
+edgar_pipeline/app/theme_preference.json
 .streamlit/secrets.toml
 edgar_pipeline/outputs/streamlit_ui.log*
 

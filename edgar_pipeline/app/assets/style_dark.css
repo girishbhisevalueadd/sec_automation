@@ -1,0 +1,53 @@
+/* =====================================================================
+   Dark theme override - appended after style.css when the user picks Dark.
+   Only redefines :root variables and a few rules that need a different
+   color in dark mode.
+   ===================================================================== */
+
+:root {
+    --bg:            #0E1117;
+    --surface:       #1C2333;
+    --surface-2:     #232B3D;
+    --border:        #2D3650;
+    --accent-blue:   #1D6FA4;
+    --accent-teal:   #0F9E75;
+    --success:       #00C49A;
+    --warning:       #F5A623;
+    --error:         #E05252;
+    --text:          #FAFAFA;
+    --text-muted:    #8B8FA8;
+    --header-text:   #FFFFFF;
+    --gradient-1:    #FAFAFA;
+    --hero-tint:     rgba(29,111,164,0.25);
+    --console-bg:    #07090F;
+    --console-text:  #E0E6EE;
+    --shadow-card:   0 4px 14px rgba(0,0,0,0.30);
+}
+
+/* Streamlit's built-in chrome (header bar, modal backgrounds) doesn't
+   always honor CSS variables - force the dark backgrounds. */
+.stApp, body {
+    background-color: var(--bg) !important;
+}
+
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #141A29 0%, #0E1117 100%) !important;
+}
+
+.stButton > button {
+    background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 120%);
+}
+
+div[data-testid="stMetric"] {
+    background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 120%);
+}
+
+.activity-item {
+    background: var(--surface);
+}
+
+/* Streamlit header (the top bar) - dark mode */
+[data-testid="stHeader"] {
+    background: rgba(14,17,23,0.85) !important;
+    backdrop-filter: blur(10px);
+}
