@@ -8,3 +8,10 @@ schedule>=1.2
 requests>=2.31
 reportlab>=4.0
 docx2pdf>=0.1.8; sys_platform == "win32"
+# --- Streamlit UI layer ---
+streamlit>=1.35
+plotly>=5.20
+streamlit-extras>=0.4
+streamlit-autorefresh>=1.0
+humanize>=4.0
+watchdog>=4.0

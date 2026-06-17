@@ -68,3 +68,7 @@ desktop.ini
 # --- Logs ---
 *.log
 logs/
+
+# --- Streamlit UI runtime ---
+edgar_pipeline/app/watchlist_overrides.json
+.streamlit/secrets.toml
