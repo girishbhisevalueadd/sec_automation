@@ -1,0 +1,70 @@
+# --- Virtual environments ---
+secenv/
+venv/
+env/
+ENV/
+.venv/
+.env/
+*.egg-info/
+
+# --- Python build / cache ---
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+build/
+dist/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Pipeline runtime outputs ---
+edgar_pipeline/outputs/db/*.db
+edgar_pipeline/outputs/db/*.db-journal
+edgar_pipeline/outputs/excel/
+edgar_pipeline/outputs/reports/
+edgar_pipeline/outputs/pipeline.log
+edgar_pipeline/outputs/*.log
+
+# --- edgartools local cache ---
+.edgar/
+edgar_cache/
+
+# --- Secrets / env ---
+.env
+.env.*
+*.pem
+*.key
+secrets.json
+.anthropic_key
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Heavy / non-essential binaries ---
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+*.exe
+*.msi
+*.dmg
+*.iso
+
+# --- Logs ---
+*.log
+logs/
