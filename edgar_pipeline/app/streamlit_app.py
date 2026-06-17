@@ -37,7 +37,7 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
-    menu_items={"About": "ValueAdd Research · SEC EDGAR pipeline · Powered by edgartools + Claude"},
+    menu_items={"About": "ValueAdd Research · SEC EDGAR pipeline · Powered by edgartools"},
 )
 logger.debug("st.set_page_config() applied")
 
@@ -102,7 +102,7 @@ def _kpi_snapshot() -> dict:
 st.markdown(
     '<div class="hero">'
     '<h1>SEC Financial Intelligence Platform</h1>'
-    '<p>Powered by <b>edgartools</b> + <b>Claude AI</b> &nbsp;·&nbsp; Built by ValueAdd Research And Analytics Solutions LLP</p>'
+    '<p>Powered by <b>edgartools</b> &nbsp;·&nbsp; Built by ValueAdd Research And Analytics Solutions LLP</p>'
     '</div>',
     unsafe_allow_html=True,
 )
