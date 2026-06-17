@@ -100,12 +100,10 @@ def _kpi_snapshot() -> dict:
 # Hero banner
 # ---------------------------------------------------------------------------
 st.markdown(
-    '''
-    <div class="hero">
-        <h1>SEC Financial Intelligence Platform</h1>
-        <p>Powered by <b>edgartools</b> + <b>Claude AI</b> &nbsp;·&nbsp; Built by ValueAdd Research</p>
-    </div>
-    ''',
+    '<div class="hero">'
+    '<h1>SEC Financial Intelligence Platform</h1>'
+    '<p>Powered by <b>edgartools</b> + <b>Claude AI</b> &nbsp;·&nbsp; Built by ValueAdd Research And Analytics Solutions LLP</p>'
+    '</div>',
     unsafe_allow_html=True,
 )
 

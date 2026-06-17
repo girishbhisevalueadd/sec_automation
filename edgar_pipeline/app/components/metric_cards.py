@@ -33,16 +33,18 @@ def render_metric_cards(metrics: Iterable[dict]) -> None:
                 cls = "trend-down"
             delta_html = f'<div class="delta {cls}">{_html.escape(delta_raw)}</div>'
 
-        cards_html.append(
-            f'''
-            <div class="metric-card">
-                <span class="icon">{icon}</span>
-                <div class="label">{label}</div>
-                <div class="kpi-number">{value}</div>
-                {delta_html}
-            </div>
-            '''
+        # IMPORTANT: keep this string on one logical line with no leading
+        # whitespace. Streamlit's markdown engine treats lines indented
+        # by 4+ spaces as code blocks and renders the raw HTML as text.
+        card = (
+            f'<div class="metric-card">'
+            f'<span class="icon">{icon}</span>'
+            f'<div class="label">{label}</div>'
+            f'<div class="kpi-number">{value}</div>'
+            f'{delta_html}'
+            f'</div>'
         )
+        cards_html.append(card)
 
     grid_html = f'<div class="kpi-row">{"".join(cards_html)}</div>'
     st.markdown(grid_html, unsafe_allow_html=True)

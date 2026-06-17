@@ -31,12 +31,14 @@ def render_sidebar() -> None:
 
     logger.debug("render_sidebar: start")
     with st.sidebar:
-        # ---- Logo ----
+        # ---- Company name (top of sidebar) ----
         st.markdown(
-            '<div style="padding: 8px 0 16px 0;">'
-            '<div style="font-family: var(--mono); font-size:11px; color: var(--text-muted); letter-spacing: 0.18em;">VALUEADD</div>'
-            '<div style="font-size:22px; font-weight:800; background: linear-gradient(90deg, #FAFAFA, #6FCDF7); -webkit-background-clip:text; -webkit-text-fill-color: transparent;">RESEARCH</div>'
-            '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); margin-top:2px;">SEC EDGAR Intelligence</div>'
+            '<div style="padding: 4px 0 18px 0; border-bottom: 1px solid var(--border); margin-bottom: 12px;">'
+            '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); letter-spacing: 0.18em; margin-bottom:4px;">PRESENTED BY</div>'
+            '<div style="font-size:18px; font-weight:900; line-height:1.25; color: var(--text); background: linear-gradient(90deg, #FAFAFA 0%, #6FCDF7 70%, #0F9E75 100%); -webkit-background-clip:text; -webkit-text-fill-color: transparent;">'
+            'ValueAdd Research And Analytics Solutions LLP'
+            '</div>'
+            '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); margin-top:6px; letter-spacing: 0.05em;">SEC EDGAR Intelligence Platform</div>'
             '</div>',
             unsafe_allow_html=True,
         )
