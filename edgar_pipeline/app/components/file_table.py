@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html as _html
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +18,8 @@ if str(_APP_DIR) not in _sys.path:
 
 from app_utils import get_mime_type, list_output_files, parse_output_filename  # noqa: E402
 
+logger = logging.getLogger(__name__)
+
 
 def render_file_table(
     directory: Path,
@@ -30,9 +33,14 @@ def render_file_table(
     Returns the list of paths the user selected (via checkbox).
     """
     files = list_output_files(directory, extension)
+    logger.debug(
+        "render_file_table: dir=%s ext=%s search=%r matched=%d",
+        directory.name, extension, search, len(files),
+    )
     if search:
         s = search.lower()
         files = [p for p in files if s in p.name.lower()]
+        logger.debug("render_file_table: post-search count=%d", len(files))
 
     if not files:
         st.info(f"No {extension} files yet in `{directory.name}/`.")

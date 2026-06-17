@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 import streamlit as st
 
+logger = logging.getLogger(__name__)
 
 _LABELS = {
     "idle": "Idle",
@@ -18,6 +21,7 @@ def render_status_badge(status: str, label: str | None = None) -> None:
     """Render a colored pill with optional label. 'running' pulses."""
     status = (status or "idle").lower()
     if status not in _LABELS:
+        logger.debug("render_status_badge: unknown status %r, defaulting to 'idle'", status)
         status = "idle"
     text = label or _LABELS[status]
     html = (

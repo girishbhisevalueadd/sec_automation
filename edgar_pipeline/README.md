@@ -28,6 +28,39 @@ python main.py run --ticker MSFT
 
 Outputs land in `outputs/excel/`, `outputs/reports/`, and `outputs/db/financials.db`.
 
+## Streamlit web UI
+
+```bash
+bash run_app.sh             # macOS / Linux / Git Bash
+.\run_app.bat               # Windows cmd / PowerShell
+```
+
+Then open **http://localhost:8501**. The launcher auto-detects `secenv/`,
+verifies streamlit is installed, and prints the URL.
+
+If you prefer to call streamlit directly:
+
+```bash
+# CORRECT
+streamlit run app/streamlit_app.py
+
+# WRONG - main.py is the click CLI, not a streamlit script
+streamlit run main.py
+```
+
+### Logging
+
+The UI writes a separate log file at `outputs/streamlit_ui.log` (rotated at
+2 MB, 3 backups kept). The backend keeps writing to `outputs/pipeline.log`.
+Both files are viewable from the **Logs** page in the app.
+
+Bump verbosity per-run with an env var:
+
+```bash
+EDGAR_UI_LOG_LEVEL=DEBUG bash run_app.sh    # POSIX
+set EDGAR_UI_LOG_LEVEL=DEBUG && run_app.bat  # Windows cmd
+```
+
 ## CLI command reference
 
 | Command                                                  | What it does                                                |

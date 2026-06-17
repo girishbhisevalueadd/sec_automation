@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import html as _html
+import logging
 from typing import Iterable
 
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 
 def render_metric_cards(metrics: Iterable[dict]) -> None:
@@ -14,7 +17,9 @@ def render_metric_cards(metrics: Iterable[dict]) -> None:
     Each metric: {"label", "value", "delta" (optional), "icon" (optional)}
     """
     cards_html: list[str] = []
-    for m in metrics:
+    metrics_list = list(metrics)
+    logger.debug("render_metric_cards: rendering %d cards", len(metrics_list))
+    for m in metrics_list:
         label = _html.escape(str(m.get("label", "")))
         value = _html.escape(str(m.get("value", "")))
         icon = _html.escape(str(m.get("icon", "")))

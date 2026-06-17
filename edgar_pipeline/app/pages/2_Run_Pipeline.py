@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import time
 from datetime import datetime
@@ -14,6 +15,9 @@ _PIPELINE_ROOT = _APP_DIR.parent
 for _p in (_APP_DIR, _PIPELINE_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
+
+logger = logging.getLogger(__name__)
+logger.info("Page load: 2_Run_Pipeline")
 
 from app_utils import get_effective_watchlist, get_mime_type, inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
@@ -118,6 +122,10 @@ with left:
         run_clicked = True
 
     if run_clicked and selected_tickers and steps:
+        logger.info(
+            "User triggered pipeline: tickers=%s form=%s limit=%d steps=%s narrative=%s force_refresh=%s",
+            selected_tickers, form, limit, sorted(steps), do_narr, force_refresh,
+        )
         # Reset state
         ss["pipeline_output"] = []
         ss["pipeline_files"] = []
@@ -228,8 +236,13 @@ with right:
                 ss["pipeline_thread_files"] = files
             else:
                 ss["pipeline_running"] = False
-                ss["pipeline_status"] = "failed" if any("[ERROR]" in ln for ln in ss["pipeline_output"]) else "success"
+                had_err = any("[ERROR]" in ln for ln in ss["pipeline_output"])
+                ss["pipeline_status"] = "failed" if had_err else "success"
                 progress = 100
+                logger.info(
+                    "Pipeline run finished: status=%s files=%d",
+                    ss["pipeline_status"], len(ss["pipeline_files"]),
+                )
 
         progress_placeholder.progress(progress / 100, text=f"Progress {progress}%")
 

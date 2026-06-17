@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -14,6 +15,9 @@ _PIPELINE_ROOT = _APP_DIR.parent
 for _p in (_APP_DIR, _PIPELINE_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
+
+logger = logging.getLogger(__name__)
+logger.info("Page load: 3_Financials")
 
 from app_utils import inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
@@ -60,6 +64,7 @@ if not tickers:
 
 top_cols = st.columns([1.2, 1, 1])
 ticker = top_cols[0].selectbox("Ticker", tickers, key="fin_ticker")
+logger.debug("Financials: selected ticker=%s", ticker)
 view_mode = top_cols[1].radio(
     "Number format",
     ["Standard (M / B)", "Indian (Cr / L)"],

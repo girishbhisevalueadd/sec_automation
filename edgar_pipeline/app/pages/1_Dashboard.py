@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html as _h
+import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,6 +18,9 @@ _PIPELINE_ROOT = _APP_DIR.parent
 for _p in (_APP_DIR, _PIPELINE_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
+
+logger = logging.getLogger(__name__)
+logger.info("Page load: 1_Dashboard")
 
 from app_utils import (  # noqa: E402
     get_effective_watchlist,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -15,6 +16,9 @@ _PIPELINE_ROOT = _APP_DIR.parent
 for _p in (_APP_DIR, _PIPELINE_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
+
+logger = logging.getLogger(__name__)
+logger.info("Page load: 4_Charts")
 
 from app_utils import inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
@@ -90,6 +94,7 @@ if not tickers:
     st.stop()
 
 ticker = st.selectbox("Ticker", tickers, key="charts_ticker")
+logger.debug("Charts: selected ticker=%s", ticker)
 summary = _summary(ticker)
 ratios = _ratios(ticker)
 

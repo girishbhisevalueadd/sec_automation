@@ -7,6 +7,7 @@ to a shared queue so the Streamlit UI can render them live.
 
 from __future__ import annotations
 
+import logging
 import queue
 import sys
 import threading
@@ -19,6 +20,8 @@ _APP_DIR = Path(__file__).resolve().parent
 _PIPELINE_ROOT = _APP_DIR.parent
 if str(_PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(_PIPELINE_ROOT))
+
+logger = logging.getLogger(__name__)
 
 
 def _ts() -> str:
@@ -46,7 +49,12 @@ def run_pipeline_with_output(
 
     def push(line: str) -> None:
         output_queue.put(line)
+        logger.debug("queue<<  %s", line)
 
+    logger.info(
+        "Pipeline run begin: ticker=%s form=%s limit=%d steps=%s narrative=%s force_refresh=%s",
+        ticker, form, limit, sorted(steps), use_narrative, force_refresh,
+    )
     push(f"[{_ts()}] [START] Pipeline started for {ticker} (form={form}, limit={limit}, force_refresh={force_refresh})")
 
     try:
@@ -155,8 +163,10 @@ def run_pipeline_with_output(
                 push(f"[{_ts()}] [WARN] PDF generation failed: {e}")
 
         push(f"[{_ts()}] [DONE] Pipeline completed. {len(files_out)} files created.")
+        logger.info("Pipeline run end: ticker=%s files_created=%d", ticker, len(files_out))
 
     except Exception as e:  # noqa: BLE001
+        logger.exception("Pipeline run errored for %s: %s", ticker, e)
         push(f"[{_ts()}] [ERROR] {e}")
         push(traceback.format_exc())
 
@@ -175,8 +185,13 @@ def start_pipeline_thread(
         target=run_pipeline_with_output,
         args=(ticker, steps, form, limit, use_narrative, out_q, files_out, force_refresh),
         daemon=True,
+        name=f"pipeline-{ticker}-{form}",
     )
     t.start()
+    logger.info(
+        "Spawned thread '%s' (alive=%s) for ticker=%s form=%s",
+        t.name, t.is_alive(), ticker, form,
+    )
     return t, out_q, files_out
 
 

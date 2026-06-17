@@ -6,6 +6,7 @@ Run from the edgar_pipeline directory:
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,17 @@ for _p in (_APP_DIR, _PIPELINE_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+# ---- Initialize logging FIRST so every subsequent import is logged ----
+from logging_config import setup_logging, log_call, UI_LOG_PATH  # noqa: E402
+setup_logging(level=os.environ.get("EDGAR_UI_LOG_LEVEL", "INFO"))
+
+import logging  # noqa: E402
+logger = logging.getLogger(__name__)
+logger.info("=" * 70)
+logger.info("Streamlit app boot: streamlit_app.py")
+logger.info("APP_DIR=%s  PIPELINE_ROOT=%s", _APP_DIR, _PIPELINE_ROOT)
+logger.info("Streamlit version=%s", st.__version__)
+
 # Page config MUST be the very first Streamlit call in the script
 st.set_page_config(
     page_title="Edgar Pipeline",
@@ -27,6 +39,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
     menu_items={"About": "ValueAdd Research · SEC EDGAR pipeline · Powered by edgartools + Claude"},
 )
+logger.debug("st.set_page_config() applied")
 
 from app_utils import (  # noqa: E402
     get_effective_watchlist,
@@ -38,6 +51,7 @@ from app_utils import (  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
 from components.metric_cards import render_metric_cards  # noqa: E402
 
+logger.debug("Imports complete - injecting CSS and rendering sidebar")
 inject_css(st)
 render_sidebar()
 
@@ -46,6 +60,7 @@ render_sidebar()
 # Cached data accessors
 # ---------------------------------------------------------------------------
 @st.cache_data(ttl=30)
+@log_call(log_args=False)
 def _kpi_snapshot() -> dict:
     import config
     from storage import db_status
@@ -119,6 +134,7 @@ quick_ticker = qr_col1.text_input(
 qr_run = qr_col2.button("▶ Run Full Pipeline", type="primary", use_container_width=True)
 
 if qr_run and quick_ticker:
+    logger.info("Quick Run clicked: ticker=%s → routing to 2_Run_Pipeline", quick_ticker.upper())
     st.session_state["prefill_ticker"] = quick_ticker.upper()
     st.switch_page("pages/2_Run_Pipeline.py")
 

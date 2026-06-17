@@ -72,3 +72,7 @@ logs/
 # --- Streamlit UI runtime ---
 edgar_pipeline/app/watchlist_overrides.json
 .streamlit/secrets.toml
+edgar_pipeline/outputs/streamlit_ui.log*
+
+# --- Atomic-write tmp files (Edit tool) ---
+*.tmp.*

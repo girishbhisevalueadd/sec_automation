@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import sys
 import zipfile
 from datetime import datetime
@@ -18,6 +19,9 @@ _PIPELINE_ROOT = _APP_DIR.parent
 for _p in (_APP_DIR, _PIPELINE_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
+
+logger = logging.getLogger(__name__)
+logger.info("Page load: 5_Downloads")
 
 from app_utils import inject_css, list_output_files  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
@@ -68,7 +72,9 @@ if selected_for_zip:
                     zf.write(p, p.name)
         return buf.getvalue()
 
+    logger.info("Downloads: building ZIP for %d selected files", len(selected_for_zip))
     z = _zip_bytes(selected_for_zip)
+    logger.info("Downloads: ZIP built, %.1f KB", len(z) / 1024)
     st.download_button(
         "⬇ Download Selected as ZIP",
         data=z,

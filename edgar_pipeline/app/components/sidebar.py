@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import html as _html
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 _APP_DIR = Path(__file__).resolve().parent.parent
 if str(_APP_DIR) not in sys.path:
@@ -26,6 +29,7 @@ def render_sidebar() -> None:
     import config
     from storage import db_status
 
+    logger.debug("render_sidebar: start")
     with st.sidebar:
         # ---- Logo ----
         st.markdown(

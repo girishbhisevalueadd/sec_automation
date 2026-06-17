@@ -9,6 +9,7 @@ Lives in app/ so it imports nothing from streamlit pages.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from datetime import datetime
@@ -25,6 +26,8 @@ ASSETS_DIR = APP_DIR / "assets"
 STYLE_FILE = ASSETS_DIR / "style.css"
 WATCHLIST_OVERRIDE_FILE = APP_DIR / "watchlist_overrides.json"
 
+logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # CSS loader
@@ -32,8 +35,11 @@ WATCHLIST_OVERRIDE_FILE = APP_DIR / "watchlist_overrides.json"
 def load_css() -> str:
     """Return the contents of style.css for injection via st.markdown."""
     try:
-        return STYLE_FILE.read_text(encoding="utf-8")
+        css = STYLE_FILE.read_text(encoding="utf-8")
+        logger.debug("load_css: %d bytes from %s", len(css), STYLE_FILE)
+        return css
     except FileNotFoundError:
+        logger.warning("load_css: style.css missing at %s", STYLE_FILE)
         return ""
 
 
@@ -41,6 +47,7 @@ def inject_css(st) -> None:
     css = load_css()
     if css:
         st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+        logger.debug("inject_css: injected %d bytes", len(css))
 
 
 # ---------------------------------------------------------------------------
@@ -68,15 +75,22 @@ def get_effective_watchlist() -> list[str]:
     added = [t.upper() for t in overrides.get("added", [])]
     removed = set(t.upper() for t in overrides.get("removed", []))
     union = [t for t in base + added if t not in removed]
-    return list(dict.fromkeys(union))
+    final = list(dict.fromkeys(union))
+    logger.debug(
+        "get_effective_watchlist: base=%s added=%s removed=%s -> %s",
+        base, added, list(removed), final,
+    )
+    return final
 
 
 def add_to_watchlist(ticker: str) -> tuple[bool, str]:
     """Validate ticker exists in EDGAR, then add to override file."""
     ticker = (ticker or "").strip().upper()
+    logger.info("add_to_watchlist: ticker=%r", ticker)
     if not ticker:
         return False, "Empty ticker"
     if ticker in get_effective_watchlist():
+        logger.info("add_to_watchlist: %s already present, skipping", ticker)
         return False, f"{ticker} already in watchlist"
 
     # Validate via edgartools - make sure identity is set
@@ -87,8 +101,10 @@ def add_to_watchlist(ticker: str) -> tuple[bool, str]:
         c = Company(ticker)
         name = getattr(c, "name", None) or getattr(c, "company_name", "") or ""
         if not name:
+            logger.warning("add_to_watchlist: %s not found on EDGAR", ticker)
             return False, f"{ticker} not found on EDGAR"
     except Exception as e:  # noqa: BLE001
+        logger.exception("add_to_watchlist: EDGAR lookup failed for %s", ticker)
         return False, f"Lookup failed: {e}"
 
     data = _load_overrides()
@@ -97,14 +113,17 @@ def add_to_watchlist(ticker: str) -> tuple[bool, str]:
     data["added"] = added
     data["removed"] = removed
     _save_overrides(data)
+    logger.info("add_to_watchlist: persisted %s (%s)", ticker, name)
     return True, f"Added {ticker} ({name})"
 
 
 def remove_from_watchlist(ticker: str) -> tuple[bool, str]:
     ticker = (ticker or "").strip().upper()
+    logger.info("remove_from_watchlist: ticker=%r", ticker)
     if not ticker:
         return False, "Empty ticker"
     if ticker not in get_effective_watchlist():
+        logger.info("remove_from_watchlist: %s not in current watchlist", ticker)
         return False, f"{ticker} not in watchlist"
     data = _load_overrides()
     added = [t for t in data.get("added", []) if t != ticker]
@@ -112,6 +131,7 @@ def remove_from_watchlist(ticker: str) -> tuple[bool, str]:
     data["added"] = added
     data["removed"] = removed
     _save_overrides(data)
+    logger.info("remove_from_watchlist: persisted removal of %s", ticker)
     return True, f"Removed {ticker}"
 
 
@@ -131,10 +151,14 @@ def get_mime_type(suffix: str) -> str:
 
 def list_output_files(directory: Path, extension: str | None = None) -> list[Path]:
     if not directory.exists():
+        logger.debug("list_output_files: %s does not exist", directory)
         return []
     if extension:
-        return sorted(directory.glob(f"*{extension}"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return sorted([p for p in directory.iterdir() if p.is_file()], key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(directory.glob(f"*{extension}"), key=lambda p: p.stat().st_mtime, reverse=True)
+    else:
+        files = sorted([p for p in directory.iterdir() if p.is_file()], key=lambda p: p.stat().st_mtime, reverse=True)
+    logger.debug("list_output_files: %s ext=%s -> %d files", directory.name, extension, len(files))
+    return files
 
 
 def parse_output_filename(path: Path) -> dict:
@@ -164,12 +188,16 @@ def tail_log(n: int = 100) -> list[str]:
     import config
     path = config.LOG_PATH
     if not path.exists():
+        logger.debug("tail_log: %s does not exist yet", path)
         return []
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             lines = f.readlines()
-        return lines[-n:]
-    except OSError:
+        tail = lines[-n:]
+        logger.debug("tail_log: returning last %d/%d lines of %s", len(tail), len(lines), path.name)
+        return tail
+    except OSError as e:
+        logger.warning("tail_log: read failed for %s: %s", path, e)
         return []
 
 
