@@ -36,13 +36,19 @@ def render_sidebar() -> None:
     logger.debug("render_sidebar: start")
     with st.sidebar:
         # ---- Company name (top of sidebar) ----
+        # Use solid var(--text) - the company name MUST be readable in
+        # both light and dark themes; a light-colored gradient washes
+        # out on a white background.
         st.markdown(
             '<div style="padding: 4px 0 18px 0; border-bottom: 1px solid var(--border); margin-bottom: 12px;">'
-            '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); letter-spacing: 0.18em; margin-bottom:4px;">PRESENTED BY</div>'
-            '<div style="font-size:18px; font-weight:900; line-height:1.25; color: var(--text); background: linear-gradient(90deg, #FAFAFA 0%, #6FCDF7 70%, #0F9E75 100%); -webkit-background-clip:text; -webkit-text-fill-color: transparent;">'
+            '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); letter-spacing: 0.18em; margin-bottom:6px;">PRESENTED BY</div>'
+            '<div style="display:flex; align-items:center; gap:8px;">'
+            '<span style="display:inline-block; width:4px; height:36px; border-radius:2px; background: linear-gradient(180deg, var(--accent-blue) 0%, var(--accent-teal) 100%);"></span>'
+            '<span style="font-size:17px; font-weight:900; line-height:1.20; color: var(--text); letter-spacing:-0.01em;">'
             'ValueAdd Research And Analytics Solutions LLP'
+            '</span>'
             '</div>'
-            '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); margin-top:6px; letter-spacing: 0.05em;">SEC EDGAR Intelligence Platform</div>'
+            '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); margin-top:8px; letter-spacing: 0.05em;">SEC EDGAR Intelligence Platform</div>'
             '</div>',
             unsafe_allow_html=True,
         )
