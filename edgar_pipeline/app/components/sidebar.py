@@ -35,12 +35,28 @@ def render_sidebar() -> None:
 
     logger.debug("render_sidebar: start")
     with st.sidebar:
-        # ---- Company name (top of sidebar) ----
-        # Use solid var(--text) - the company name MUST be readable in
-        # both light and dark themes; a light-colored gradient washes
-        # out on a white background.
+        # ---- Company logo (very top of sidebar) ----
+        # Base64-embed so it always renders without serving static files.
+        logo_path = getattr(config, "LOGO_PATH", None)
+        if logo_path and Path(logo_path).exists():
+            try:
+                import base64
+                mime = "image/png" if str(logo_path).lower().endswith(".png") else "image/jpeg"
+                with open(logo_path, "rb") as _f:
+                    _b64 = base64.b64encode(_f.read()).decode("ascii")
+                st.markdown(
+                    f'<div style="padding: 0 0 12px 0; text-align: left;">'
+                    f'<img src="data:{mime};base64,{_b64}" '
+                    f'style="max-width: 180px; height: auto; display: block;" alt="ValueAdd Research"/>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            except OSError as e:  # noqa: BLE001
+                logger.warning("Failed to embed sidebar logo: %s", e)
+
+        # ---- Company name block (just below the logo) ----
         st.markdown(
-            '<div style="padding: 4px 0 18px 0; border-bottom: 1px solid var(--border); margin-bottom: 12px;">'
+            '<div style="padding: 4px 0 14px 0; border-bottom: 1px solid var(--border); margin-bottom: 12px;">'
             '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); letter-spacing: 0.18em; margin-bottom:6px;">PRESENTED BY</div>'
             '<div style="display:flex; align-items:center; gap:8px;">'
             '<span style="display:inline-block; width:4px; height:36px; border-radius:2px; background: linear-gradient(180deg, var(--accent-blue) 0%, var(--accent-teal) 100%);"></span>'
@@ -49,6 +65,16 @@ def render_sidebar() -> None:
             '</span>'
             '</div>'
             '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); margin-top:8px; letter-spacing: 0.05em;">SEC EDGAR Intelligence Platform</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ---- User line (below the brand block) ----
+        author = getattr(config, "REPORT_AUTHOR", "Vivek Pol")
+        st.markdown(
+            '<div style="padding: 0 0 12px 0; margin-bottom: 6px;">'
+            '<div style="font-family: var(--mono); font-size:10px; color: var(--text-muted); letter-spacing: 0.18em; margin-bottom:4px;">USER</div>'
+            f'<div style="font-size:14px; font-weight:700; color: var(--text);">{_html.escape(author)}</div>'
             '</div>',
             unsafe_allow_html=True,
         )

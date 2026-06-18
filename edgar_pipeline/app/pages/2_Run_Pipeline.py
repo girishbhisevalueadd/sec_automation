@@ -21,7 +21,6 @@ logger.debug("Page load: 2_Run_Pipeline")
 
 from app_utils import get_effective_watchlist, get_mime_type, inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
-from components.branding import render_page_branding  # noqa: E402
 from components.status_badge import badge_html  # noqa: E402
 from pipeline_runner import (  # noqa: E402
     drain_queue,
@@ -31,7 +30,6 @@ from pipeline_runner import (  # noqa: E402
 
 inject_css(st)
 render_sidebar()
-render_page_branding()
 
 st.markdown('<h1 style="margin-top:0;">🚀 Run Pipeline</h1>', unsafe_allow_html=True)
 st.caption("Pull SEC filings, build Excel models, and generate research reports.")
