@@ -139,7 +139,7 @@ def run_pipeline_with_output(
         summary = ratios = None
         if any(s in steps for s in ("build_excel", "build_word", "build_pdf")):
             push(f"[{_ts()}] [INFO] Building summary tables + ratios ...")
-            summary = processor.build_summary_table(ticker, periods=5)
+            summary = processor.build_summary_table(ticker)
             ratios = processor.calculate_ratios(summary)
             push(f"[{_ts()}] [OK] Summary computed (income={summary['income'].shape}, ratios={ratios.shape})")
 

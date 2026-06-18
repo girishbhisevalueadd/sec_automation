@@ -194,7 +194,7 @@ st.markdown('<div class="section-header">Revenue Trend by Ticker</div>', unsafe_
 @st.cache_data(ttl=60)
 def _revenue_trend(ticker: str) -> pd.Series:
     import processor
-    summary = processor.build_summary_table(ticker, periods=5)
+    summary = processor.build_summary_table(ticker)
     inc = summary.get("income")
     if inc is None or inc.empty:
         return pd.Series(dtype=float)

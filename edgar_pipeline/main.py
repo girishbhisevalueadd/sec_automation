@@ -71,7 +71,7 @@ def do_build(ticker: str, form_type: str = "10-K") -> Path | None:
     import model_builder
 
     _print(f"Building Excel model for {ticker}...")
-    summary = processor.build_summary_table(ticker, periods=5)
+    summary = processor.build_summary_table(ticker)
     if all(df.empty for df in summary.values()):
         _print(f"  ! no stored data for {ticker} - run fetch first")
         return None
@@ -87,7 +87,7 @@ def do_report(ticker: str, fmt: str, form_type: str = "10-K") -> list[Path]:
     import narrative as narrative_mod
 
     _print(f"Generating {fmt} report for {ticker}...")
-    summary = processor.build_summary_table(ticker, periods=5)
+    summary = processor.build_summary_table(ticker)
     if all(df.empty for df in summary.values()):
         _print(f"  ! no stored data for {ticker} - run fetch first")
         return []

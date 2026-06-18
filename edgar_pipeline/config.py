@@ -60,9 +60,17 @@ CLAUDE_MODEL: str = "claude-sonnet-4-6"
 # ---------------------------------------------------------------------------
 # Reporting metadata
 # ---------------------------------------------------------------------------
-REPORT_PREPARED_BY: str = EDGAR_IDENTITY["name"]
-REPORT_FOOTER: str = "Confidential | ValueAdd Research"
-DATA_SOURCE_FOOTER: str = "Source: SEC EDGAR via edgartools | ValueAdd Research"
+# REPORT_AUTHOR appears after "Prepared by" in the Word + PDF cover page.
+# REPORT_COMPANY is the full firm name used on covers, footers, and sidebars.
+REPORT_AUTHOR: str = "Vivek Pol"
+REPORT_COMPANY: str = "ValueAdd Research And Analytics Solutions LLP"
+# Kept for backward compatibility - now points at the full company name.
+REPORT_PREPARED_BY: str = REPORT_COMPANY
+REPORT_FOOTER: str = f"Confidential | {REPORT_COMPANY}"
+DATA_SOURCE_FOOTER: str = f"Source: SEC EDGAR via edgartools | {REPORT_COMPANY}"
+# Logo embedded on the Word + PDF cover page. Optional - falls back to text
+# if the file is missing.
+LOGO_PATH: Path = BASE_DIR / "valueadd_logo.jpg"
 
 # ---------------------------------------------------------------------------
 # Excel styling constants

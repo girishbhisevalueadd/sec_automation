@@ -107,7 +107,10 @@ def _add_footer(doc: Document) -> None:
     run3._r.append(fld_end2)
 
 
-def _df_to_table(doc: Document, df: pd.DataFrame, max_rows: int = 30) -> None:
+def _df_to_table(doc: Document, df: pd.DataFrame, max_rows: int | None = None) -> None:
+    """Render a DataFrame as a Word table. max_rows=None means render
+    every row (no cap) - user explicitly asked for limitless tables.
+    """
     if df is None or df.empty:
         doc.add_paragraph("(no data available)").italic = True
         return
@@ -115,7 +118,8 @@ def _df_to_table(doc: Document, df: pd.DataFrame, max_rows: int = 30) -> None:
     if "label" in work.columns:
         cols = ["label"] + [c for c in work.columns if c != "label"]
         work = work[cols]
-    work = work.head(max_rows)
+    if max_rows is not None:
+        work = work.head(max_rows)
     n_rows, n_cols = work.shape
     table = doc.add_table(rows=n_rows + 1, cols=n_cols)
     table.style = "Table Grid"
@@ -165,14 +169,16 @@ def _load_filing_text(ticker: str, section: str) -> str:
         return ""
 
 
-def _split_text_for_doc(text: str, max_paragraphs: int = 60) -> list[str]:
-    """Break a long text blob into reasonable paragraphs for python-docx.
-    Caps at max_paragraphs to keep the Word file size manageable.
+def _split_text_for_doc(text: str, max_paragraphs: int | None = None) -> list[str]:
+    """Break a long text blob into paragraphs for python-docx.
+
+    max_paragraphs=None (default) means NO cap - the full text is rendered.
+    User explicitly asked for limitless text extraction.
     """
     if not text:
         return []
     chunks = [p.strip() for p in text.split("\n\n") if p.strip()]
-    if len(chunks) <= max_paragraphs:
+    if max_paragraphs is None or len(chunks) <= max_paragraphs:
         return chunks
     head = chunks[: max_paragraphs - 1]
     tail_note = f"[…truncated; {len(chunks) - len(head)} more paragraphs in source filing]"
@@ -214,11 +220,31 @@ def build_word_report(
 
     prep_p = doc.add_paragraph()
     prep_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    prep_p.add_run(f"Prepared by {config.REPORT_PREPARED_BY}").italic = True
+    prep_run = prep_p.add_run(f"Prepared by {config.REPORT_AUTHOR}")
+    prep_run.italic = True
+    prep_run.bold = True
+    prep_run.font.size = Pt(13)
+
+    company_p = doc.add_paragraph()
+    company_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    company_run = company_p.add_run(config.REPORT_COMPANY)
+    company_run.font.size = Pt(11)
+    company_run.font.color.rgb = RGBColor(0x4A, 0x4A, 0x4A)
 
     doc.add_paragraph()
-    logo_p = doc.add_paragraph("[Logo Placeholder]")
+    # Embed the ValueAdd logo; fall back to a centered text placeholder
+    # if the file isn't on disk for some reason.
+    logo_p = doc.add_paragraph()
     logo_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    logo_path = getattr(config, "LOGO_PATH", None)
+    if logo_path and Path(logo_path).exists():
+        try:
+            logo_p.add_run().add_picture(str(logo_path), width=Inches(3.0))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Could not embed logo (%s): %s", logo_path, e)
+            logo_p.add_run("[Logo unavailable]").italic = True
+    else:
+        logo_p.add_run("[Logo not found at %s]" % logo_path).italic = True
 
     doc.add_page_break()
 

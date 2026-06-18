@@ -288,10 +288,13 @@ def _extract_tax_detail(xbrl: Any) -> pd.DataFrame:
     return _facts_pivot(xbrl, keywords, label="tax_detail")
 
 
-def _extract_filing_text_section(filing: Any, item_label: str, max_chars: int = 12000) -> str:
+def _extract_filing_text_section(filing: Any, item_label: str, max_chars: int | None = None) -> str:
     """Find a 10-K item by header (e.g. 'Item 1A.', 'Item 7.') and return
-    its concatenated text up to max_chars. Stops at the next 'Item N.'
-    header. Returns empty string on failure.
+    its FULL concatenated text. Stops at the next 'Item N.' header.
+    Returns empty string on failure.
+
+    max_chars=None means no cap - extract the entire section verbatim.
+    The user explicitly asked for no caps on text extraction.
     """
     try:
         secs = filing.sections() if callable(getattr(filing, "sections", None)) else filing.sections
@@ -315,23 +318,24 @@ def _extract_filing_text_section(filing: Any, item_label: str, max_chars: int = 
             if next_pat.match(s) and label_norm not in low:
                 break
             buf.append(s)
-            if sum(len(b) for b in buf) > max_chars:
+            if max_chars is not None and sum(len(b) for b in buf) > max_chars:
                 break
         else:
             if low.startswith(label_norm):
                 capturing = True
                 buf.append(s)
 
-    return "\n\n".join(buf)[:max_chars]
+    out = "\n\n".join(buf)
+    return out[:max_chars] if max_chars is not None else out
 
 
 def extract_risk_factors_text(filing: Any) -> str:
-    """Return Item 1A. Risk Factors text."""
+    """Return Item 1A. Risk Factors text (full length, no truncation)."""
     return _extract_filing_text_section(filing, "Item 1A.")
 
 
 def extract_mda_text(filing: Any) -> str:
-    """Return Item 7. Management's Discussion and Analysis text."""
+    """Return Item 7. MD&A text (full length, no truncation)."""
     return _extract_filing_text_section(filing, "Item 7.")
 
 

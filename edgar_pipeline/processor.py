@@ -348,8 +348,13 @@ def _add_intl_columns(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def build_summary_table(ticker: str, periods: int = 5) -> dict[str, pd.DataFrame]:
-    """Pull stored statements from SQLite and return wide summary tables."""
+def build_summary_table(ticker: str, periods: int | None = None) -> dict[str, pd.DataFrame]:
+    """Pull stored statements from SQLite and return wide summary tables.
+
+    periods=None (default) returns ALL stored periods - no cap. Pass an
+    integer to limit to the N most recent periods (useful for compact
+    Excel models or for the UI's last-5-years default view).
+    """
     stmt_types = [
         "income", "balance", "cashflow", "debt",
         "segment", "debt_maturity", "leases", "sbc", "tax_detail",
@@ -358,8 +363,8 @@ def build_summary_table(ticker: str, periods: int = 5) -> dict[str, pd.DataFrame
     for stmt in stmt_types:
         df = storage.load_statements(ticker, stmt)
         if not df.empty:
-            # Limit to N most recent periods
-            if len(df.columns) > periods:
+            # Optional cap to N most recent periods
+            if periods is not None and len(df.columns) > periods:
                 df = df.iloc[:, :periods]
             df = df.copy()
             # Re-order rows so they flow top-to-bottom like a real

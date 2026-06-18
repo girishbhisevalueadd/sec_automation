@@ -51,13 +51,13 @@ def _tickers() -> list[str]:
 @st.cache_data(ttl=60)
 def _summary(ticker: str) -> dict[str, pd.DataFrame]:
     import processor
-    return processor.build_summary_table(ticker, periods=10)
+    return processor.build_summary_table(ticker)
 
 
 @st.cache_data(ttl=60)
 def _ratios(ticker: str) -> pd.DataFrame:
     import processor
-    return processor.calculate_ratios(processor.build_summary_table(ticker, periods=10))
+    return processor.calculate_ratios(processor.build_summary_table(ticker))
 
 
 def _row(stmt: pd.DataFrame, candidates: list[str]) -> pd.Series:
