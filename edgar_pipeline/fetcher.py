@@ -115,11 +115,18 @@ def _statement_to_dataframe(xbrl: Any, kind: str) -> pd.DataFrame:
 def _extract_debt_facts(xbrl: Any) -> pd.DataFrame:
     """Pull debt-related XBRL facts. Returns empty DF on failure."""
     keywords = ["LongTermDebt", "NotesPayable", "DebtCurrent", "LongTermDebtMaturity"]
+    return _facts_pivot(xbrl, keywords, label="debt_facts")
+
+
+def _facts_pivot(xbrl: Any, keywords: list[str], *, label: str = "facts") -> pd.DataFrame:
+    """Generic: search_facts for each keyword, combine, dedupe, pivot
+    concept x period. Returns empty DataFrame if nothing matches.
+    """
     frames: list[pd.DataFrame] = []
     try:
         facts = xbrl.facts
     except Exception as e:  # noqa: BLE001
-        logger.debug("xbrl.facts unavailable: %s", e)
+        logger.debug("xbrl.facts unavailable (%s): %s", label, e)
         return pd.DataFrame()
 
     for kw in keywords:
@@ -128,26 +135,204 @@ def _extract_debt_facts(xbrl: Any) -> pd.DataFrame:
             if isinstance(df, pd.DataFrame) and not df.empty:
                 frames.append(df)
         except Exception as e:  # noqa: BLE001
-            logger.debug("facts.search_facts(%s) failed: %s", kw, e)
+            logger.debug("facts.search_facts(%s) failed [%s]: %s", kw, label, e)
 
     if not frames:
         return pd.DataFrame()
 
     combined = pd.concat(frames, ignore_index=True)
-    combined = combined.drop_duplicates(subset=[c for c in combined.columns if c in ("concept", "value", "period_end")])
+    combined = combined.drop_duplicates(
+        subset=[c for c in combined.columns if c in ("concept", "value", "period_end", "period_instant")]
+    )
 
-    # Pivot to concept x period
-    if "period_end" in combined.columns and "numeric_value" in combined.columns and "concept" in combined.columns:
+    # Coalesce period_end (duration facts) and period_instant (point-in-time
+    # facts like balance sheet items / debt maturity / lease commitments).
+    if "period" not in combined.columns:
+        pe = combined.get("period_end") if "period_end" in combined.columns else None
+        pi = combined.get("period_instant") if "period_instant" in combined.columns else None
+        if pe is not None and pi is not None:
+            combined["period"] = pe.fillna(pi)
+        elif pe is not None:
+            combined["period"] = pe
+        elif pi is not None:
+            combined["period"] = pi
+
+    if "period" in combined.columns and "numeric_value" in combined.columns and "concept" in combined.columns:
         try:
             pivot = combined.pivot_table(
-                index="concept", columns="period_end", values="numeric_value", aggfunc="last"
+                index="concept", columns="period", values="numeric_value", aggfunc="last"
             )
-            pivot = pivot[sorted(pivot.columns, reverse=True)]
+            # Drop NaN-column placeholders if any sneak in
+            pivot = pivot.loc[:, pivot.columns.notna()]
+            if len(pivot.columns) > 0:
+                pivot = pivot[sorted(pivot.columns, reverse=True, key=str)]
             pivot.index.name = "concept"
             return pivot
         except Exception as e:  # noqa: BLE001
-            logger.debug("debt facts pivot failed: %s", e)
-    return combined
+            logger.debug("%s pivot failed: %s", label, e)
+    # Pivot didn't work - return empty rather than the raw facts table
+    # (the raw table has dozens of XBRL metadata columns the Excel sheet
+    # would try to render as periods).
+    logger.debug("%s: no usable period column; returning empty", label)
+    return pd.DataFrame()
+
+
+# ---------------------------------------------------------------------------
+# Richer concept-family extractors
+# ---------------------------------------------------------------------------
+def _extract_segment_data(xbrl: Any) -> pd.DataFrame:
+    """Return revenue/cost rows broken down by product, segment, geography
+    - the dimension rows the main statements throw away. Index is the
+    human label, columns are periods.
+    """
+    try:
+        raw = xbrl.statements.income_statement().to_dataframe()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("segment extraction failed: %s", e)
+        return pd.DataFrame()
+    if raw is None or raw.empty or "dimension" not in raw.columns:
+        return pd.DataFrame()
+
+    dim = raw[raw["dimension"] == True].copy()  # noqa: E712
+    if dim.empty:
+        return pd.DataFrame()
+
+    # Prepend the dimension axis short-name to disambiguate identical labels
+    if "dimension_axis" in dim.columns:
+        def _short(axis: object) -> str:
+            s = str(axis or "").split(":")[-1]
+            return s.replace("Axis", "").strip()
+        dim["label_full"] = dim.apply(
+            lambda r: f"{_short(r.get('dimension_axis'))}: {r.get('label','')}".strip(": "),
+            axis=1,
+        )
+    else:
+        dim["label_full"] = dim.get("label", "")
+
+    period_cols = [c for c in dim.columns if re.search(r"\d{4}-\d{2}-\d{2}", str(c))]
+    if not period_cols:
+        return pd.DataFrame()
+
+    # Normalize period headers (strip "(FY)" etc)
+    rename_map = {c: re.search(r"(\d{4}-\d{2}-\d{2})", str(c)).group(1) for c in period_cols}
+    out = dim[["label_full"] + period_cols].copy()
+    out = out.rename(columns=rename_map)
+    out = out.drop_duplicates(subset=["label_full"])
+    out = out.set_index("label_full")
+    out.index.name = "concept"
+    out = out[sorted(out.columns.tolist(), reverse=True)]
+    return out
+
+
+def _extract_debt_maturity(xbrl: Any) -> pd.DataFrame:
+    """Long-term debt maturity ladder: 1Y / 2Y / 3Y / 4Y / 5Y / thereafter."""
+    keywords = [
+        "LongTermDebtMaturitiesRepaymentsOfPrincipalInNextTwelveMonths",
+        "LongTermDebtMaturitiesRepaymentsOfPrincipalInYearTwo",
+        "LongTermDebtMaturitiesRepaymentsOfPrincipalInYearThree",
+        "LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFour",
+        "LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFive",
+        "LongTermDebtMaturitiesRepaymentsOfPrincipalAfterYearFive",
+        "LongTermDebtMaturities",
+    ]
+    return _facts_pivot(xbrl, keywords, label="debt_maturity")
+
+
+def _extract_lease_schedule(xbrl: Any) -> pd.DataFrame:
+    """Operating + finance lease payment commitments by year."""
+    keywords = [
+        "LesseeOperatingLeaseLiabilityPaymentsDueNextTwelveMonths",
+        "LesseeOperatingLeaseLiabilityPaymentsDueYearTwo",
+        "LesseeOperatingLeaseLiabilityPaymentsDueYearThree",
+        "LesseeOperatingLeaseLiabilityPaymentsDueYearFour",
+        "LesseeOperatingLeaseLiabilityPaymentsDueYearFive",
+        "LesseeOperatingLeaseLiabilityPaymentsDueAfterYearFive",
+        "LesseeOperatingLeaseLiabilityPaymentsDue",
+        "FinanceLeaseLiabilityPaymentsDueNextTwelveMonths",
+        "FinanceLeaseLiabilityPaymentsDueYearTwo",
+        "FinanceLeaseLiabilityPaymentsDueYearThree",
+        "FinanceLeaseLiabilityPaymentsDueYearFour",
+        "FinanceLeaseLiabilityPaymentsDueYearFive",
+        "FinanceLeaseLiabilityPaymentsDueAfterYearFive",
+        "OperatingLeaseRightOfUseAsset",
+        "OperatingLeaseLiabilityCurrent",
+        "OperatingLeaseLiabilityNoncurrent",
+    ]
+    return _facts_pivot(xbrl, keywords, label="leases")
+
+
+def _extract_sbc_data(xbrl: Any) -> pd.DataFrame:
+    """Stock-based compensation: expense, options outstanding, RSUs."""
+    keywords = [
+        "ShareBasedCompensation",
+        "ShareBasedCompensationArrangementByShareBasedPaymentAwardOptionsGrantsInPeriodGross",
+        "ShareBasedCompensationArrangementByShareBasedPaymentAwardEquityInstrumentsOtherThanOptionsGrantsInPeriod",
+        "EmployeeServiceShareBasedCompensationNonvestedAwardsTotalCompensationCostNotYetRecognized",
+    ]
+    return _facts_pivot(xbrl, keywords, label="sbc")
+
+
+def _extract_tax_detail(xbrl: Any) -> pd.DataFrame:
+    """Income tax: current vs. deferred, federal/foreign/state, reconciliation."""
+    keywords = [
+        "CurrentFederalTaxExpenseBenefit",
+        "CurrentForeignTaxExpenseBenefit",
+        "CurrentStateAndLocalTaxExpenseBenefit",
+        "DeferredFederalIncomeTaxExpenseBenefit",
+        "DeferredForeignIncomeTaxExpenseBenefit",
+        "DeferredStateAndLocalIncomeTaxExpenseBenefit",
+        "IncomeTaxReconciliationIncomeTaxExpenseBenefitAtFederalStatutoryIncomeTaxRate",
+        "IncomeTaxReconciliationForeignIncomeTaxRateDifferential",
+        "EffectiveIncomeTaxRateContinuingOperations",
+    ]
+    return _facts_pivot(xbrl, keywords, label="tax_detail")
+
+
+def _extract_filing_text_section(filing: Any, item_label: str, max_chars: int = 12000) -> str:
+    """Find a 10-K item by header (e.g. 'Item 1A.', 'Item 7.') and return
+    its concatenated text up to max_chars. Stops at the next 'Item N.'
+    header. Returns empty string on failure.
+    """
+    try:
+        secs = filing.sections() if callable(getattr(filing, "sections", None)) else filing.sections
+    except Exception as e:  # noqa: BLE001
+        logger.debug("filing.sections() failed: %s", e)
+        return ""
+    if not isinstance(secs, list):
+        return ""
+
+    label_norm = item_label.lower().strip().rstrip(".")
+    next_pat = re.compile(r"^\s*item\s+\d+[a-z]?\.\s+", re.IGNORECASE)
+
+    buf: list[str] = []
+    capturing = False
+    for s in secs:
+        if not isinstance(s, str) or not s.strip():
+            continue
+        low = s.lower().strip()
+        if capturing:
+            # Stop when we hit the next "Item N." header (but not the same one)
+            if next_pat.match(s) and label_norm not in low:
+                break
+            buf.append(s)
+            if sum(len(b) for b in buf) > max_chars:
+                break
+        else:
+            if low.startswith(label_norm):
+                capturing = True
+                buf.append(s)
+
+    return "\n\n".join(buf)[:max_chars]
+
+
+def extract_risk_factors_text(filing: Any) -> str:
+    """Return Item 1A. Risk Factors text."""
+    return _extract_filing_text_section(filing, "Item 1A.")
+
+
+def extract_mda_text(filing: Any) -> str:
+    """Return Item 7. Management's Discussion and Analysis text."""
+    return _extract_filing_text_section(filing, "Item 7.")
 
 
 # ---------------------------------------------------------------------------
@@ -214,11 +399,26 @@ def fetch_company_filings(ticker: str, form: str = "10-K", limit: int = 5) -> li
                 logger.warning("xbrl() unavailable for %s %s: %s", ticker, period, e)
 
             income_df = balance_df = cashflow_df = debt_df = pd.DataFrame()
+            segment_df = debt_maturity_df = lease_df = sbc_df = tax_df = pd.DataFrame()
+            risk_text = mda_text = ""
             if xbrl is not None:
                 income_df = _statement_to_dataframe(xbrl, "income")
                 balance_df = _statement_to_dataframe(xbrl, "balance")
                 cashflow_df = _statement_to_dataframe(xbrl, "cashflow")
                 debt_df = _extract_debt_facts(xbrl)
+                segment_df = _extract_segment_data(xbrl)
+                debt_maturity_df = _extract_debt_maturity(xbrl)
+                lease_df = _extract_lease_schedule(xbrl)
+                sbc_df = _extract_sbc_data(xbrl)
+                tax_df = _extract_tax_detail(xbrl)
+
+            # Heavy text extraction is optional - skip on Q filings to save time.
+            try:
+                if form == "10-K":
+                    risk_text = extract_risk_factors_text(filing)
+                    mda_text = extract_mda_text(filing)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("filing text extraction failed for %s: %s", ticker, e)
 
             results.append({
                 "ticker": ticker.upper(),
@@ -230,12 +430,21 @@ def fetch_company_filings(ticker: str, form: str = "10-K", limit: int = 5) -> li
                 "balance_sheet": balance_df,
                 "cash_flow_statement": cashflow_df,
                 "debt_facts": debt_df,
+                "segment_data": segment_df,
+                "debt_maturity": debt_maturity_df,
+                "lease_schedule": lease_df,
+                "sbc_data": sbc_df,
+                "tax_detail": tax_df,
+                "risk_factors_text": risk_text,
+                "mda_text": mda_text,
                 "raw_filing_url": str(raw_url),
             })
             logger.info(
-                "  parsed %s %s @ %s (income=%s, balance=%s, cashflow=%s, debt=%s)",
+                "  parsed %s %s @ %s (income=%s, bal=%s, cf=%s, debt=%s, seg=%s, mat=%s, lease=%s, sbc=%s, tax=%s, risk=%dchars, mda=%dchars)",
                 ticker, form, period or "?",
                 income_df.shape, balance_df.shape, cashflow_df.shape, debt_df.shape,
+                segment_df.shape, debt_maturity_df.shape, lease_df.shape,
+                sbc_df.shape, tax_df.shape, len(risk_text), len(mda_text),
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("Skipping a %s %s filing due to error: %s", ticker, form, e)

@@ -43,6 +43,15 @@ SCHEMA = [
         FOREIGN KEY(filing_id) REFERENCES filings(id) ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS filing_text (
+        filing_id INTEGER NOT NULL,
+        section TEXT NOT NULL,
+        content TEXT,
+        PRIMARY KEY (filing_id, section),
+        FOREIGN KEY(filing_id) REFERENCES filings(id) ON DELETE CASCADE
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_findata_filing ON financial_data(filing_id)",
     "CREATE INDEX IF NOT EXISTS idx_findata_stmt ON financial_data(stmt_type)",
     "CREATE INDEX IF NOT EXISTS idx_filings_ticker ON filings(ticker)",
@@ -150,19 +159,23 @@ def save_filing(filing_dict: dict) -> int:
         # Wipe old line items for this filing then re-insert
         conn.execute("DELETE FROM financial_data WHERE filing_id=?", (filing_id,))
 
+        # Map stmt_type -> source key in filing_dict
+        statement_sources = [
+            ("income",        "income_statement"),
+            ("balance",       "balance_sheet"),
+            ("cashflow",      "cash_flow_statement"),
+            ("debt",          "debt_facts"),
+            ("segment",       "segment_data"),
+            ("debt_maturity", "debt_maturity"),
+            ("leases",        "lease_schedule"),
+            ("sbc",           "sbc_data"),
+            ("tax_detail",    "tax_detail"),
+        ]
         all_rows: list[tuple] = []
-        all_rows += [
-            (filing_id, *r) for r in _melt_statement(filing_dict.get("income_statement"), "income")
-        ]
-        all_rows += [
-            (filing_id, *r) for r in _melt_statement(filing_dict.get("balance_sheet"), "balance")
-        ]
-        all_rows += [
-            (filing_id, *r) for r in _melt_statement(filing_dict.get("cash_flow_statement"), "cashflow")
-        ]
-        all_rows += [
-            (filing_id, *r) for r in _melt_statement(filing_dict.get("debt_facts"), "debt")
-        ]
+        for stmt_type, key in statement_sources:
+            all_rows += [
+                (filing_id, *r) for r in _melt_statement(filing_dict.get(key), stmt_type)
+            ]
         if all_rows:
             conn.executemany(
                 """
@@ -171,9 +184,39 @@ def save_filing(filing_dict: dict) -> int:
                 """,
                 all_rows,
             )
-    logger.info("Saved filing %s %s %s (id=%s, lines=%d)",
-                ticker, form_type, period, filing_id, len(all_rows))
+
+        # Save full-text sections separately (risk factors, MD&A)
+        conn.execute("DELETE FROM filing_text WHERE filing_id=?", (filing_id,))
+        text_rows = []
+        for section_name, key in (("risk_factors", "risk_factors_text"), ("mda", "mda_text")):
+            content = filing_dict.get(key) or ""
+            if content:
+                text_rows.append((filing_id, section_name, content))
+        if text_rows:
+            conn.executemany(
+                "INSERT INTO filing_text (filing_id, section, content) VALUES (?, ?, ?)",
+                text_rows,
+            )
+
+    logger.info("Saved filing %s %s %s (id=%s, lines=%d, text_sections=%d)",
+                ticker, form_type, period, filing_id, len(all_rows), len(text_rows))
     return filing_id
+
+
+def load_filing_text(ticker: str, section: str, latest_only: bool = True) -> str:
+    """Return concatenated text content from filing_text table."""
+    init_db()
+    sql = (
+        "SELECT ft.content FROM filing_text ft "
+        "JOIN filings f ON f.id = ft.filing_id "
+        "WHERE f.ticker=? AND ft.section=? "
+        "ORDER BY f.period DESC"
+    )
+    if latest_only:
+        sql += " LIMIT 1"
+    with get_connection() as conn:
+        rows = conn.execute(sql, (ticker.upper(), section)).fetchall()
+    return "\n\n".join(r["content"] for r in rows if r["content"])
 
 
 def load_statements(

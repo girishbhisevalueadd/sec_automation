@@ -155,6 +155,30 @@ def _section_heading(doc: Document, title: str, level: int = 1) -> None:
         run.font.color.rgb = RGBColor(0x1D, 0x4E, 0x89)
 
 
+def _load_filing_text(ticker: str, section: str) -> str:
+    """Pull stored filing-text section (risk_factors / mda) for this ticker."""
+    try:
+        from storage import load_filing_text
+        return load_filing_text(ticker, section, latest_only=True) or ""
+    except Exception as e:  # noqa: BLE001
+        logger.warning("filing text load failed (%s/%s): %s", ticker, section, e)
+        return ""
+
+
+def _split_text_for_doc(text: str, max_paragraphs: int = 60) -> list[str]:
+    """Break a long text blob into reasonable paragraphs for python-docx.
+    Caps at max_paragraphs to keep the Word file size manageable.
+    """
+    if not text:
+        return []
+    chunks = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if len(chunks) <= max_paragraphs:
+        return chunks
+    head = chunks[: max_paragraphs - 1]
+    tail_note = f"[…truncated; {len(chunks) - len(head)} more paragraphs in source filing]"
+    return head + [tail_note]
+
+
 # ---------------------------------------------------------------------------
 # Word builder
 # ---------------------------------------------------------------------------
@@ -206,7 +230,13 @@ def build_word_report(
         "3. Income Statement Analysis",
         "4. Balance Sheet Analysis",
         "5. Cash Flow Analysis",
-        "6. Debt Profile",
+        "6. Debt Profile (incl. Maturity Ladder)",
+        "7. Segment & Geographic Detail",
+        "8. Lease Commitments",
+        "9. Stock-Based Compensation",
+        "10. Income Tax Detail",
+        "11. Risk Factors (from 10-K Item 1A)",
+        "12. Management's Discussion & Analysis (from 10-K Item 7)",
     ]
     for item in toc_items:
         doc.add_paragraph(item, style="List Number")
@@ -253,14 +283,76 @@ def build_word_report(
 
     # ---- Section 6 - Debt Profile ----
     doc.add_page_break()
-    _section_heading(doc, "6. Debt Profile")
+    _section_heading(doc, "6. Debt Profile (incl. Maturity Ladder)")
     debt_df = summary_dict.get("debt", pd.DataFrame())
+    maturity_df = summary_dict.get("debt_maturity", pd.DataFrame())
     if debt_df is not None and not debt_df.empty:
         _df_to_table(doc, debt_df)
-    else:
+    if maturity_df is not None and not maturity_df.empty:
+        doc.add_paragraph().add_run("Maturity Ladder").bold = True
+        _df_to_table(doc, maturity_df.reset_index() if "label" not in maturity_df.columns else maturity_df)
+    if (debt_df is None or debt_df.empty) and (maturity_df is None or maturity_df.empty):
         doc.add_paragraph("No debt-specific XBRL facts were extracted from the latest filings.")
-    doc.add_paragraph(sections.get("KEY RISKS") or "[Key risks placeholder.]")
-    doc.add_paragraph(sections.get("OUTLOOK") or "[Outlook placeholder.]")
+
+    # ---- Section 7 - Segment & Geography ----
+    doc.add_page_break()
+    _section_heading(doc, "7. Segment & Geographic Detail")
+    seg_df = summary_dict.get("segment", pd.DataFrame())
+    if seg_df is not None and not seg_df.empty:
+        _df_to_table(doc, seg_df.reset_index() if "label" not in seg_df.columns else seg_df)
+    else:
+        doc.add_paragraph("Segment / geographic breakdown not separately reported in this filing.")
+
+    # ---- Section 8 - Leases ----
+    doc.add_page_break()
+    _section_heading(doc, "8. Lease Commitments")
+    lease_df = summary_dict.get("leases", pd.DataFrame())
+    if lease_df is not None and not lease_df.empty:
+        _df_to_table(doc, lease_df.reset_index() if "label" not in lease_df.columns else lease_df)
+    else:
+        doc.add_paragraph("Lease commitment detail not present in extracted facts.")
+
+    # ---- Section 9 - SBC ----
+    doc.add_page_break()
+    _section_heading(doc, "9. Stock-Based Compensation")
+    sbc_df = summary_dict.get("sbc", pd.DataFrame())
+    if sbc_df is not None and not sbc_df.empty:
+        _df_to_table(doc, sbc_df.reset_index() if "label" not in sbc_df.columns else sbc_df)
+    else:
+        doc.add_paragraph("Stock-based compensation detail not present in extracted facts.")
+
+    # ---- Section 10 - Tax detail ----
+    doc.add_page_break()
+    _section_heading(doc, "10. Income Tax Detail")
+    tax_df = summary_dict.get("tax_detail", pd.DataFrame())
+    if tax_df is not None and not tax_df.empty:
+        _df_to_table(doc, tax_df.reset_index() if "label" not in tax_df.columns else tax_df)
+    else:
+        doc.add_paragraph("Income tax detail not present in extracted facts.")
+
+    # ---- Section 11 - Risk Factors (text from filing) ----
+    doc.add_page_break()
+    _section_heading(doc, "11. Risk Factors")
+    risk_text = _load_filing_text(ticker, "risk_factors")
+    if risk_text:
+        for para in _split_text_for_doc(risk_text):
+            doc.add_paragraph(para)
+    else:
+        doc.add_paragraph("Risk Factors text not available for this filing.")
+
+    # ---- Section 12 - MD&A (text from filing) ----
+    doc.add_page_break()
+    _section_heading(doc, "12. Management's Discussion & Analysis")
+    mda_text = _load_filing_text(ticker, "mda")
+    if mda_text:
+        for para in _split_text_for_doc(mda_text):
+            doc.add_paragraph(para)
+    else:
+        doc.add_paragraph("MD&A text not available for this filing.")
+
+    doc.add_page_break()
+    doc.add_paragraph(sections.get("KEY RISKS") or "")
+    doc.add_paragraph(sections.get("OUTLOOK") or "")
 
     _add_footer(doc)
 

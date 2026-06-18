@@ -56,45 +56,69 @@ with left:
     st.markdown('<div class="section-header">Run Configuration</div>', unsafe_allow_html=True)
     prefill = ss.pop("prefill_ticker", "") if "prefill_ticker" in ss else ""
 
-    mode = st.radio(
-        "Source", ["Single ticker", "Watchlist"], horizontal=True, key="rp_mode"
-    )
+    # Wrap inputs in a form so EVERY widget (text_input, radios, checkboxes)
+    # commits its value atomically on submit. Without a form, a button's
+    # `disabled=` flag is evaluated against stale widget state and the
+    # first click lands while the button is still disabled, forcing the
+    # user to click a second time.
+    with st.form("rp_run_form", clear_on_submit=False):
+        mode = st.radio(
+            "Source", ["Single ticker", "Watchlist"], horizontal=True, key="rp_mode"
+        )
 
-    selected_tickers: list[str] = []
-    if mode == "Single ticker":
         single = st.text_input(
-            "Ticker",
+            "Ticker (used only when Source = Single ticker)",
             value=prefill or ss.get("pipeline_ticker", ""),
             placeholder="AAPL",
             key="rp_single_ticker",
         )
-        if single:
-            selected_tickers = [single.strip().upper()]
-    else:
-        wl = get_effective_watchlist()
-        selected_tickers = st.multiselect(
-            "Tickers", options=wl, default=wl, key="rp_multi_tickers"
+        wl_default = get_effective_watchlist()
+        multi = st.multiselect(
+            "Tickers (used only when Source = Watchlist)",
+            options=wl_default, default=wl_default, key="rp_multi_tickers",
         )
 
-    form = st.radio("Form type", ["10-K", "10-Q", "Both"], horizontal=True, key="rp_form")
-    limit = st.slider("Filings per form", min_value=1, max_value=10, value=5, key="rp_limit")
+        form = st.radio("Form type", ["10-K", "10-Q", "Both"], horizontal=True, key="rp_form")
+        limit = st.slider("Filings per form", min_value=1, max_value=10, value=5, key="rp_limit")
 
-    st.markdown('<div class="section-header" style="font-size:14px;">Steps</div>', unsafe_allow_html=True)
-    do_fetch = st.checkbox("Fetch from SEC EDGAR", value=True, key="rp_step_fetch")
-    do_store = st.checkbox("Store in SQLite", value=True, key="rp_step_store")
-    do_excel = st.checkbox("Build Excel Model", value=True, key="rp_step_excel")
-    do_word = st.checkbox("Generate Word Report", value=True, key="rp_step_word")
-    do_pdf = st.checkbox("Generate PDF Report", value=True, key="rp_step_pdf")
-    do_narr = st.checkbox(
-        "Generate AI Narrative (Anthropic API key)",
-        value=False, key="rp_step_narr",
-        help="Requires ANTHROPIC_API_KEY environment variable.",
+        st.markdown('<div class="section-header" style="font-size:14px;">Steps</div>', unsafe_allow_html=True)
+        do_fetch = st.checkbox("Fetch from SEC EDGAR", value=True, key="rp_step_fetch")
+        do_store = st.checkbox("Store in SQLite", value=True, key="rp_step_store")
+        do_excel = st.checkbox("Build Excel Model", value=True, key="rp_step_excel")
+        do_word = st.checkbox("Generate Word Report", value=True, key="rp_step_word")
+        do_pdf = st.checkbox("Generate PDF Report", value=True, key="rp_step_pdf")
+        do_narr = st.checkbox(
+            "Generate AI Narrative (Anthropic API key)",
+            value=False, key="rp_step_narr",
+            help="Requires ANTHROPIC_API_KEY environment variable.",
+        )
+        force_refresh = st.checkbox(
+            "Force refresh from EDGAR (ignore SQLite cache)",
+            value=False, key="rp_force_refresh",
+            help="If unchecked, the pipeline reuses already-stored filings and skips the EDGAR fetch.",
+        )
+
+        run_clicked = st.form_submit_button(
+            "▶ Run Pipeline",
+            type="primary",
+            use_container_width=True,
+            disabled=ss["pipeline_running"],
+        )
+
+    # Separate "Run Whole Watchlist" button outside the form so it works
+    # without form-submit semantics.
+    run_all = st.button(
+        "▶ Run Whole Watchlist",
+        use_container_width=True,
+        disabled=ss["pipeline_running"],
+        key="rp_run_all_btn",
     )
-    force_refresh = st.checkbox(
-        "Force refresh from EDGAR (ignore SQLite cache)",
-        value=False, key="rp_force_refresh",
-        help="If unchecked, the pipeline reuses already-stored filings and skips the EDGAR fetch.",
-    )
+
+    # Resolve selected_tickers from the freshly committed widget values
+    if mode == "Single ticker":
+        selected_tickers = [single.strip().upper()] if single and single.strip() else []
+    else:
+        selected_tickers = list(multi)
 
     steps: set[str] = set()
     if do_fetch: steps.add("fetch")
@@ -103,19 +127,11 @@ with left:
     if do_word: steps.add("build_word")
     if do_pdf: steps.add("build_pdf")
 
-    st.divider()
-
-    run_clicked = st.button(
-        "▶ Run Pipeline",
-        type="primary",
-        use_container_width=True,
-        disabled=ss["pipeline_running"] or not selected_tickers or not steps,
-    )
-    run_all = st.button(
-        "▶ Run Whole Watchlist",
-        use_container_width=True,
-        disabled=ss["pipeline_running"],
-    )
+    # Validation feedback - shown if the user tries to submit incomplete inputs
+    if run_clicked and not selected_tickers:
+        st.error("Please enter at least one ticker before running.")
+    if run_clicked and not steps:
+        st.error("Pick at least one pipeline step.")
 
     if run_all:
         selected_tickers = get_effective_watchlist()

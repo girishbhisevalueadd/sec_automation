@@ -118,10 +118,19 @@ def _render_statement(stmt_key: str, df: pd.DataFrame, *, is_ratios: bool = Fals
         return
 
     period_cols = [c for c in df.columns if c != "label"]
+    default_periods = period_cols[: min(5, len(period_cols))]
     selected_periods = st.multiselect(
-        "Periods", options=period_cols, default=period_cols[: min(5, len(period_cols))],
+        "Periods (defaults to most recent 5)",
+        options=period_cols,
+        default=default_periods,
         key=f"fin_periods_{stmt_key}",
+        help="Clear the box to fall back to the most recent 5 years.",
     )
+    # Null-safe: if the user clears the selector, fall back to default 5
+    # so the table is never blank. Prevents the "no year selected = empty
+    # null table" footgun.
+    if not selected_periods:
+        selected_periods = default_periods
     cols_to_show = (["label"] if "label" in df.columns else []) + selected_periods
     view = df[cols_to_show].copy()
 

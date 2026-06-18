@@ -350,7 +350,10 @@ def _add_intl_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_summary_table(ticker: str, periods: int = 5) -> dict[str, pd.DataFrame]:
     """Pull stored statements from SQLite and return wide summary tables."""
-    stmt_types = ["income", "balance", "cashflow", "debt"]
+    stmt_types = [
+        "income", "balance", "cashflow", "debt",
+        "segment", "debt_maturity", "leases", "sbc", "tax_detail",
+    ]
     summary: dict[str, pd.DataFrame] = {}
     for stmt in stmt_types:
         df = storage.load_statements(ticker, stmt)

@@ -41,6 +41,22 @@ SUBTOTAL_KEYWORDS = [
 ]
 
 
+def _combine_frames(*frames: pd.DataFrame) -> pd.DataFrame:
+    """Stack multiple statement DataFrames into one (for combined sheets).
+    Preserves row order; aligns period columns.
+    """
+    non_empty = [f for f in frames if f is not None and not f.empty]
+    if not non_empty:
+        return pd.DataFrame()
+    if len(non_empty) == 1:
+        return non_empty[0]
+    combined = pd.concat(non_empty, axis=0, join="outer")
+    if "label" in combined.columns:
+        cols = ["label"] + [c for c in combined.columns if c != "label"]
+        combined = combined[cols]
+    return combined
+
+
 def _is_subtotal(label: str) -> bool:
     if not label:
         return False
@@ -173,9 +189,13 @@ def _write_cover(ws: Worksheet, ticker: str) -> None:
         "2. Income Statement",
         "3. Balance Sheet",
         "4. Cash Flow Statement",
-        "5. Debt Schedule",
-        "6. Key Ratios",
-        "7. Data (raw normalized dump for audit)",
+        "5. Debt Schedule (incl. Maturity Ladder)",
+        "6. Segment & Geographic Detail",
+        "7. Lease Commitments",
+        "8. Stock-Based Compensation",
+        "9. Income Tax Detail",
+        "10. Key Ratios",
+        "11. Data (raw normalized dump for audit)",
     ]
     for i, line in enumerate(contents, start=9):
         ws.cell(row=i, column=2, value=line)
@@ -293,10 +313,39 @@ def build_excel_model(
         f"{ticker.upper()} Cash Flow Statement",
         summary_dict.get("cashflow", pd.DataFrame()),
     )
+    # Combine debt + debt_maturity for a fuller Debt Schedule sheet
+    debt_combined = _combine_frames(
+        summary_dict.get("debt", pd.DataFrame()),
+        summary_dict.get("debt_maturity", pd.DataFrame()),
+    )
     _write_statement_sheet(
         wb.create_sheet("Debt Schedule"),
-        f"{ticker.upper()} Debt Schedule",
-        summary_dict.get("debt", pd.DataFrame()),
+        f"{ticker.upper()} Debt Schedule (incl. Maturity Ladder)",
+        debt_combined,
+        add_yoy=False,
+    )
+    _write_statement_sheet(
+        wb.create_sheet("Segment & Geography"),
+        f"{ticker.upper()} Segment & Geographic Detail",
+        summary_dict.get("segment", pd.DataFrame()),
+        add_yoy=False,
+    )
+    _write_statement_sheet(
+        wb.create_sheet("Lease Schedule"),
+        f"{ticker.upper()} Lease Commitments",
+        summary_dict.get("leases", pd.DataFrame()),
+        add_yoy=False,
+    )
+    _write_statement_sheet(
+        wb.create_sheet("Stock-Based Comp"),
+        f"{ticker.upper()} Stock-Based Compensation",
+        summary_dict.get("sbc", pd.DataFrame()),
+        add_yoy=False,
+    )
+    _write_statement_sheet(
+        wb.create_sheet("Tax Detail"),
+        f"{ticker.upper()} Income Tax Detail",
+        summary_dict.get("tax_detail", pd.DataFrame()),
         add_yoy=False,
     )
     _write_ratios_sheet(wb.create_sheet("Key Ratios"), ratios_df)
