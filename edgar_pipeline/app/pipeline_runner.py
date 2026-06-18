@@ -37,25 +37,34 @@ def run_pipeline_with_output(
     output_queue: queue.Queue,
     files_out: list,
     force_refresh: bool = False,
+    timings_out: list | None = None,
 ) -> None:
     """Execute the configured pipeline steps for one ticker.
 
     `output_queue` receives strings the UI can stream.
     `files_out` is mutated in-place to collect produced file paths.
+    `timings_out` is mutated in-place to record per-step elapsed time;
+    each entry is {"step": label, "seconds": float, "skipped": bool}.
     `force_refresh` overrides the SQLite cache (re-fetch even if data is
     already stored). Default behavior reuses cached filings.
     """
     ticker = ticker.upper()
+    if timings_out is None:
+        timings_out = []
 
     def push(line: str) -> None:
         output_queue.put(line)
         logger.debug("queue<<  %s", line)
+
+    def record_timing(label: str, seconds: float, skipped: bool = False) -> None:
+        timings_out.append({"step": label, "seconds": round(float(seconds), 3), "skipped": bool(skipped)})
 
     logger.info(
         "Pipeline run begin: ticker=%s form=%s limit=%d steps=%s narrative=%s force_refresh=%s",
         ticker, form, limit, sorted(steps), use_narrative, force_refresh,
     )
     push(f"[{_ts()}] [START] Pipeline started for {ticker} (form={form}, limit={limit}, force_refresh={force_refresh})")
+    overall_t0 = time.time()
 
     # Import backend modules - any ImportError here usually means an
     # environment problem (corrupt venv, pip cache, edgartools version).
@@ -113,17 +122,21 @@ def run_pipeline_with_output(
             push(f"[{_ts()}] [INFO] Force refresh enabled - bypassing cache.")
 
         # --- Fetch ---
+        t0 = time.time()
         if "fetch" in steps:
             push(f"[{_ts()}] [INFO] Fetching {ticker} {form} filings from SEC EDGAR ...")
-            t0 = time.time()
             filings_data = fetch_company_filings(ticker, form=form, limit=limit)
             push(f"[{_ts()}] [OK] Fetched {len(filings_data)} filings in {time.time()-t0:.1f}s")
             for fd in filings_data:
                 p = fd.get("period_of_report") or "?"
                 inc = fd["income_statement"].shape if fd.get("income_statement") is not None else (0, 0)
                 push(f"[{_ts()}] [INFO]   - {ticker} {form} @ {p}  income={inc}")
+            record_timing("Fetch from SEC EDGAR", time.time() - t0)
+        else:
+            record_timing("Fetch from SEC EDGAR", 0.0, skipped=True)
 
         # --- Store (only when we actually fetched) ---
+        t0 = time.time()
         if "store" in steps and filings_data:
             push(f"[{_ts()}] [INFO] Storing filings to SQLite ...")
             storage.init_db()
@@ -135,6 +148,9 @@ def run_pipeline_with_output(
                 except Exception as e:  # noqa: BLE001
                     push(f"[{_ts()}] [WARN]   save failed for {fd.get('period_of_report')}: {e}")
             push(f"[{_ts()}] [OK] Stored {saved} filings")
+            record_timing("Store in SQLite", time.time() - t0)
+        else:
+            record_timing("Store in SQLite", 0.0, skipped=True)
 
         summary = ratios = None
         if any(s in steps for s in ("build_excel", "build_word", "build_pdf")):
@@ -145,21 +161,30 @@ def run_pipeline_with_output(
 
         # --- Excel ---
         excel_path = None
+        t0 = time.time()
         if "build_excel" in steps and summary is not None:
             push(f"[{_ts()}] [INFO] Building Excel model ...")
             excel_path = model_builder.build_excel_model(ticker, summary, ratios, form_type=form)
             files_out.append(excel_path)
             push(f"[{_ts()}] [OK] Excel saved: {excel_path.name}")
+            record_timing("Build Excel Model", time.time() - t0)
+        else:
+            record_timing("Build Excel Model", 0.0, skipped=True)
 
         # --- Narrative ---
         narrative_text = None
+        t0 = time.time()
         if use_narrative and summary is not None:
             push(f"[{_ts()}] [INFO] Generating AI narrative (Claude) ...")
             narrative_text = narrative_mod.generate_narrative(ticker, summary, ratios)
             push(f"[{_ts()}] [OK] Narrative ready ({len(narrative_text)} chars)")
+            record_timing("Generate AI Narrative", time.time() - t0)
+        else:
+            record_timing("Generate AI Narrative", 0.0, skipped=True)
 
         # --- Word ---
         word_path = None
+        t0 = time.time()
         if "build_word" in steps and summary is not None:
             push(f"[{_ts()}] [INFO] Generating Word report ...")
             word_path = report_writer.build_word_report(
@@ -167,24 +192,42 @@ def run_pipeline_with_output(
             )
             files_out.append(word_path)
             push(f"[{_ts()}] [OK] Word saved: {word_path.name}")
+            record_timing("Generate Word Report", time.time() - t0)
+        else:
+            record_timing("Generate Word Report", 0.0, skipped=True)
 
         # --- PDF ---
+        t0 = time.time()
         if "build_pdf" in steps and word_path is not None:
             push(f"[{_ts()}] [INFO] Generating PDF report ...")
             try:
                 pdf_path = report_writer.build_pdf_report(word_path)
                 files_out.append(pdf_path)
                 push(f"[{_ts()}] [OK] PDF saved: {pdf_path.name}")
+                record_timing("Generate PDF Report", time.time() - t0)
             except Exception as e:  # noqa: BLE001
                 push(f"[{_ts()}] [WARN] PDF generation failed: {e}")
+                record_timing("Generate PDF Report", time.time() - t0)
+        else:
+            record_timing("Generate PDF Report", 0.0, skipped=True)
 
-        push(f"[{_ts()}] [DONE] Pipeline completed. {len(files_out)} files created.")
-        logger.info("Pipeline run end: ticker=%s files_created=%d", ticker, len(files_out))
+        # Total wall-clock time for this ticker
+        record_timing("Total", time.time() - overall_t0)
+
+        push(f"[{_ts()}] [DONE] Pipeline completed in {time.time()-overall_t0:.1f}s. {len(files_out)} files created.")
+        logger.info("Pipeline run end: ticker=%s files_created=%d elapsed=%.2fs",
+                    ticker, len(files_out), time.time() - overall_t0)
 
     except Exception as e:  # noqa: BLE001
         logger.exception("Pipeline run errored for %s: %s", ticker, e)
         push(f"[{_ts()}] [ERROR] {e}")
         push(traceback.format_exc())
+        # Still emit a Total timing record so the UI table shows the
+        # elapsed time of the failed run.
+        try:
+            record_timing("Total", time.time() - overall_t0)
+        except Exception:  # noqa: BLE001
+            pass
         # CRITICAL: emit a terminal marker as the LAST line so the UI's
         # rerun loop sees it and stops. Without this the page spins
         # forever because the last-line marker check would land on the
@@ -199,12 +242,18 @@ def start_pipeline_thread(
     limit: int,
     use_narrative: bool,
     force_refresh: bool = False,
-) -> tuple[threading.Thread, queue.Queue, list]:
+) -> tuple[threading.Thread, queue.Queue, list, list]:
+    """Spawn the worker. Returns (thread, queue, files_out, timings_out).
+
+    `timings_out` is mutated in-place by the worker; the caller can read
+    it after the worker emits its terminal [DONE] marker.
+    """
     out_q: queue.Queue = queue.Queue()
     files_out: list = []
+    timings_out: list = []
     t = threading.Thread(
         target=run_pipeline_with_output,
-        args=(ticker, steps, form, limit, use_narrative, out_q, files_out, force_refresh),
+        args=(ticker, steps, form, limit, use_narrative, out_q, files_out, force_refresh, timings_out),
         daemon=True,
         name=f"pipeline-{ticker}-{form}",
     )
@@ -213,7 +262,7 @@ def start_pipeline_thread(
         "Spawned thread '%s' (alive=%s) for ticker=%s form=%s",
         t.name, t.is_alive(), ticker, form,
     )
-    return t, out_q, files_out
+    return t, out_q, files_out, timings_out
 
 
 def drain_queue(q: queue.Queue, into: list) -> bool:

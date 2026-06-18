@@ -50,10 +50,12 @@ from app_utils import (  # noqa: E402
 )
 from components.sidebar import render_sidebar  # noqa: E402
 from components.metric_cards import render_metric_cards  # noqa: E402
+from components.branding import render_page_branding  # noqa: E402
 
 logger.debug("Imports complete - injecting CSS and rendering sidebar")
 inject_css(st)
 render_sidebar()
+render_page_branding()
 
 
 # ---------------------------------------------------------------------------

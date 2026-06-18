@@ -68,9 +68,17 @@ REPORT_COMPANY: str = "ValueAdd Research And Analytics Solutions LLP"
 REPORT_PREPARED_BY: str = REPORT_COMPANY
 REPORT_FOOTER: str = f"Confidential | {REPORT_COMPANY}"
 DATA_SOURCE_FOOTER: str = f"Source: SEC EDGAR via edgartools | {REPORT_COMPANY}"
-# Logo embedded on the Word + PDF cover page. Optional - falls back to text
-# if the file is missing.
-LOGO_PATH: Path = BASE_DIR / "valueadd_logo.jpg"
+# Logo embedded on the Word + PDF + Excel cover page and shown in the
+# Streamlit sidebar. Auto-discovers .png / .jpg / .jpeg variants so the
+# user can drop in whichever format they have on hand.
+def _find_logo() -> Path | None:
+    for ext in (".png", ".jpg", ".jpeg"):
+        candidate = BASE_DIR / f"valueadd_logo{ext}"
+        if candidate.exists():
+            return candidate
+    return None
+
+LOGO_PATH: Path | None = _find_logo()
 
 # ---------------------------------------------------------------------------
 # Excel styling constants

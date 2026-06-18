@@ -21,6 +21,7 @@ logger.debug("Page load: 2_Run_Pipeline")
 
 from app_utils import get_effective_watchlist, get_mime_type, inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
+from components.branding import render_page_branding  # noqa: E402
 from components.status_badge import badge_html  # noqa: E402
 from pipeline_runner import (  # noqa: E402
     drain_queue,
@@ -30,6 +31,7 @@ from pipeline_runner import (  # noqa: E402
 
 inject_css(st)
 render_sidebar()
+render_page_branding()
 
 st.markdown('<h1 style="margin-top:0;">🚀 Run Pipeline</h1>', unsafe_allow_html=True)
 st.caption("Pull SEC filings, build Excel models, and generate research reports.")
@@ -46,6 +48,8 @@ ss.setdefault("pipeline_files", [])
 ss.setdefault("pipeline_status", "idle")
 ss.setdefault("pipeline_ticker", "")
 ss.setdefault("last_run_ts", "")
+ss.setdefault("pipeline_timings", [])         # accumulated across tickers/forms
+ss.setdefault("pipeline_thread_timings", [])  # current worker's list (mutated)
 
 # ---------------------------------------------------------------------------
 # Layout: left config panel, right console
@@ -145,6 +149,8 @@ with left:
         # Reset state
         ss["pipeline_output"] = []
         ss["pipeline_files"] = []
+        ss["pipeline_timings"] = []
+        ss["pipeline_thread_timings"] = []
         ss["pipeline_running"] = True
         ss["pipeline_status"] = "running"
         ss["pipeline_ticker"] = selected_tickers[0]
@@ -156,7 +162,7 @@ with left:
         ss["pipeline_forms_to_run"] = forms_to_run
         ss["pipeline_form_idx"] = 0
         first_ticker = selected_tickers[0]
-        thread, q, files = start_pipeline_thread(
+        thread, q, files, timings = start_pipeline_thread(
             ticker=first_ticker,
             steps=steps,
             form=forms_to_run[0],
@@ -167,6 +173,7 @@ with left:
         ss["pipeline_thread"] = thread
         ss["pipeline_queue"] = q
         ss["pipeline_files"] = files
+        ss["pipeline_thread_timings"] = timings
         ss["pipeline_steps"] = steps
         ss["pipeline_limit"] = limit
         ss["pipeline_use_narr"] = do_narr
@@ -225,6 +232,12 @@ with right:
             last_line = ss["pipeline_output"][-1]
 
         if "[DONE]" in last_line or "[ERROR]" in last_line:
+            # Worker emits all timing records BEFORE pushing [DONE], so it
+            # is safe to drain them into the persistent session list now.
+            if ss.get("pipeline_thread_timings"):
+                ss["pipeline_timings"].extend(ss["pipeline_thread_timings"])
+                ss["pipeline_thread_timings"] = []
+
             # Move to next form or next ticker
             tickers = ss.get("pipeline_queue_list", [])
             forms = ss.get("pipeline_forms_to_run", ["10-K"])
@@ -245,7 +258,7 @@ with right:
 
             if not done:
                 ss["pipeline_ticker"] = next_ticker
-                thread, q, files = start_pipeline_thread(
+                thread, q, files, timings = start_pipeline_thread(
                     ticker=next_ticker,
                     steps=ss["pipeline_steps"],
                     form=forms[ss["pipeline_form_idx"]],
@@ -253,6 +266,7 @@ with right:
                     use_narrative=ss["pipeline_use_narr"],
                     force_refresh=ss.get("pipeline_force_refresh", False),
                 )
+                ss["pipeline_thread_timings"] = timings
                 ss["pipeline_thread"] = thread
                 ss["pipeline_queue"] = q
                 ss["pipeline_files"].extend(files) if files is not ss["pipeline_files"] else None
@@ -305,3 +319,68 @@ if ss.get("pipeline_files") and not ss["pipeline_running"]:
                 )
             except OSError as e:
                 st.caption(f"⚠ {e}")
+
+
+# ---------------------------------------------------------------------------
+# Time Required - per-step elapsed time table
+# ---------------------------------------------------------------------------
+if ss.get("pipeline_timings") and not ss["pipeline_running"]:
+    import pandas as pd
+
+    # Order rows in the user's preferred display order, not the execution
+    # order (execution: fetch -> store -> excel -> narrative -> word -> pdf).
+    display_order = [
+        "Fetch from SEC EDGAR",
+        "Store in SQLite",
+        "Build Excel Model",
+        "Generate Word Report",
+        "Generate PDF Report",
+        "Generate AI Narrative",
+    ]
+
+    # Aggregate by step name. When multiple tickers run in one pipeline,
+    # each step's time is summed across all tickers / forms.
+    agg: dict[str, dict] = {}
+    total_seconds = 0.0
+    for rec in ss["pipeline_timings"]:
+        step = rec.get("step", "")
+        secs = float(rec.get("seconds") or 0)
+        skipped = bool(rec.get("skipped"))
+        if step == "Total":
+            total_seconds += secs
+            continue
+        bucket = agg.setdefault(step, {"seconds": 0.0, "ran_at_least_once": False})
+        if not skipped:
+            bucket["seconds"] += secs
+            bucket["ran_at_least_once"] = True
+
+    rows = []
+    for i, step in enumerate(display_order, start=1):
+        info = agg.get(step)
+        if info and info["ran_at_least_once"]:
+            time_str = f"{info['seconds']:.2f}"
+        else:
+            time_str = "Skipped"
+        rows.append({"#": i, "Step": step, "Time (seconds)": time_str})
+
+    # Total row - formatted as plain seconds when short, otherwise "Xm Y.Zs"
+    if total_seconds < 60:
+        total_str = f"{total_seconds:.2f} seconds"
+    else:
+        mins = int(total_seconds // 60)
+        rem = total_seconds - mins * 60
+        total_str = f"{mins}m {rem:.1f}s  ({total_seconds:.2f} seconds)"
+    rows.append({"#": 7, "Step": "TOTAL", "Time (seconds)": total_str})
+
+    timing_df = pd.DataFrame(rows)
+
+    st.markdown('<div class="section-header" style="margin-top:24px;">⏱ Time Required</div>', unsafe_allow_html=True)
+
+    # Render with last row (TOTAL) highlighted bold.
+    def _highlight_total(row):
+        if row["Step"] == "TOTAL":
+            return ["font-weight: 700; background-color: rgba(29,111,164,0.08);"] * len(row)
+        return [""] * len(row)
+
+    styled = timing_df.style.apply(_highlight_total, axis=1)
+    st.dataframe(styled, use_container_width=True, hide_index=True)

@@ -178,12 +178,14 @@ def _write_cover(ws: Worksheet, ticker: str) -> None:
     ws.cell(row=2, column=2).fill = HEADER_FILL
     ws.merge_cells("B2:F2")
     ws.cell(row=4, column=2, value="Prepared by:").font = Font(bold=True)
-    ws.cell(row=4, column=3, value=config.REPORT_PREPARED_BY)
-    ws.cell(row=5, column=2, value="Report date:").font = Font(bold=True)
-    ws.cell(row=5, column=3, value=datetime.utcnow().strftime("%Y-%m-%d"))
-    ws.cell(row=6, column=2, value="Data source:").font = Font(bold=True)
-    ws.cell(row=6, column=3, value="SEC EDGAR via edgartools")
-    ws.cell(row=8, column=2, value="Sheets in this workbook:").font = Font(bold=True)
+    ws.cell(row=4, column=3, value=getattr(config, "REPORT_AUTHOR", "Vivek Pol")).font = Font(bold=True, size=12)
+    ws.cell(row=5, column=2, value="Company:").font = Font(bold=True)
+    ws.cell(row=5, column=3, value=getattr(config, "REPORT_COMPANY", "ValueAdd Research And Analytics Solutions LLP"))
+    ws.cell(row=6, column=2, value="Report date:").font = Font(bold=True)
+    ws.cell(row=6, column=3, value=datetime.utcnow().strftime("%Y-%m-%d"))
+    ws.cell(row=7, column=2, value="Data source:").font = Font(bold=True)
+    ws.cell(row=7, column=3, value="SEC EDGAR via edgartools")
+    ws.cell(row=9, column=2, value="Sheets in this workbook:").font = Font(bold=True)
     contents = [
         "1. Cover - this page",
         "2. Income Statement",
@@ -197,11 +199,29 @@ def _write_cover(ws: Worksheet, ticker: str) -> None:
         "10. Key Ratios",
         "11. Data (raw normalized dump for audit)",
     ]
-    for i, line in enumerate(contents, start=9):
+    for i, line in enumerate(contents, start=10):
         ws.cell(row=i, column=2, value=line)
     for col_letter in ("A", "B", "C", "D", "E", "F"):
         ws.column_dimensions[col_letter].width = 22
-    _write_footer(ws, 20, 6)
+
+    # Embed the logo in the top-right of the cover sheet
+    logo_path = getattr(config, "LOGO_PATH", None)
+    if logo_path and Path(logo_path).exists():
+        try:
+            from openpyxl.drawing.image import Image as XLImage
+            img = XLImage(str(logo_path))
+            # Resize to ~180px wide while keeping aspect ratio
+            try:
+                ratio = img.height / img.width
+                img.width = 180
+                img.height = int(180 * ratio)
+            except Exception:  # noqa: BLE001
+                pass
+            ws.add_image(img, "F2")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Could not embed logo on Excel cover (%s): %s", logo_path, e)
+
+    _write_footer(ws, 22, 6)
 
 
 def _write_ratios_sheet(ws: Worksheet, ratios_df: pd.DataFrame) -> None:

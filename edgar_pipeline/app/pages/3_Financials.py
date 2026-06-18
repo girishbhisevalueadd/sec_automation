@@ -21,10 +21,12 @@ logger.debug("Page load: 3_Financials")
 
 from app_utils import inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
+from components.branding import render_page_branding  # noqa: E402
 from components.metric_cards import render_metric_cards  # noqa: E402
 
 inject_css(st)
 render_sidebar()
+render_page_branding()
 
 st.markdown('<h1 style="margin-top:0;">📋 Financial Statements</h1>', unsafe_allow_html=True)
 st.caption("Browse stored statements with comparison and Indian/standard formatting.")

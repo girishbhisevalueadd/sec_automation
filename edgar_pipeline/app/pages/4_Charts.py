@@ -22,9 +22,11 @@ logger.debug("Page load: 4_Charts")
 
 from app_utils import get_chart_colors, get_plotly_template, inject_css  # noqa: E402
 from components.sidebar import render_sidebar  # noqa: E402
+from components.branding import render_page_branding  # noqa: E402
 
 inject_css(st)
 render_sidebar()
+render_page_branding()
 
 st.markdown('<h1 style="margin-top:0;">📈 Visual Analysis</h1>', unsafe_allow_html=True)
 st.caption("Interactive Plotly charts powered by your stored SEC filings.")
