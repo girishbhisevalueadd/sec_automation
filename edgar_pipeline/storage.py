@@ -259,9 +259,32 @@ def load_statements(
     pivot = df.pivot_table(
         index="concept", columns="period", values="value", aggfunc="last"
     )
-    # Sort columns (periods) descending
+    # Custom column order: 10-K filings first (newest -> oldest), then
+    # 10-K/A, then 10-Q (newest -> oldest), then 10-Q/A, then everything
+    # else. Per user request annual data comes first, then quarterly.
     try:
-        pivot = pivot[sorted(pivot.columns, reverse=True)]
+        import re as _re
+        _FORM_RANK = {
+            "10-K": 0, "10-K/A": 1,
+            "10-Q": 2, "10-Q/A": 3,
+            "20-F": 4, "6-K": 5,
+            "8-K": 6, "DEF 14A": 7,
+        }
+
+        def _col_key(col_label: str) -> tuple[int, int]:
+            m = _re.search(r"\[([^\]]+)\]\s*$", str(col_label))
+            form = m.group(1).strip() if m else ""
+            form_rank = _FORM_RANK.get(form, 99)
+            d = _re.match(r"(\d{4})-(\d{2})-(\d{2})", str(col_label))
+            if d:
+                # Negate so larger (more recent) dates sort FIRST inside
+                # each form's group.
+                date_int = -int(d.group(1) + d.group(2) + d.group(3))
+            else:
+                date_int = 0
+            return (form_rank, date_int)
+
+        pivot = pivot[sorted(pivot.columns, key=_col_key)]
     except Exception:  # noqa: BLE001
         pass
     return pivot

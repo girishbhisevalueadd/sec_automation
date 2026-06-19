@@ -85,28 +85,52 @@ with left:
         # Word / PDF with period columns tagged [10-K], [10-Q], [8-K], etc.
         import config as _cfg
         _available_forms = getattr(_cfg, "FORMS", ["10-K", "10-Q"])
-        _default_forms = getattr(_cfg, "DEFAULT_RUN_FORMS", ["10-K", "10-Q"])
         forms_picked = st.multiselect(
             "Form types to fetch (10-K, 10-Q, 8-K, …)",
             options=_available_forms,
-            default=_default_forms,
+            default=_available_forms,   # all pre-selected; deselect manually
             key="rp_forms",
             help=(
-                "Each picked form is fetched separately, then merged into one "
-                "Excel/Word/PDF. Period columns are tagged with [form] so you "
-                "can tell annual vs. quarterly vs. proxy data apart. Forms "
-                "without XBRL (8-K, DEF 14A) produce empty statement sheets "
-                "but their filings are still recorded in the run history."
+                "Every supported form is selected by default. Deselect any "
+                "you don't want. Forms without XBRL (8-K, DEF 14A) still "
+                "get recorded in the filing history."
             ),
         )
-        limit = st.slider("Filings per form", min_value=1, max_value=10, value=5, key="rp_limit")
+
+        # "How many years of history to pull". The previous slider was
+        # confusing ("filings per form 0-10"). Replaced with a clearer
+        # control: a checkbox that defaults to fetching ALL available
+        # filings, plus an optional override box for users who DO want
+        # to cap the depth.
+        fetch_all_years = st.checkbox(
+            "Fetch ALL available years (recommended)",
+            value=True, key="rp_fetch_all",
+            help=(
+                "When checked, the pipeline pulls every filing of each "
+                "selected form that EDGAR has on file (typically 20+ "
+                "years of 10-Ks and 80+ quarters of 10-Qs). Uncheck to "
+                "limit to a smaller, faster set."
+            ),
+        )
+        manual_limit = st.number_input(
+            "…or cap at this many recent filings per form",
+            min_value=1, max_value=200, value=10, step=1,
+            key="rp_limit_manual",
+            disabled=fetch_all_years,
+            help="Only used when 'Fetch ALL' is unchecked.",
+        )
+        # 9999 is well above SEC's deepest history for any ticker -
+        # effectively 'every filing'.
+        limit = 9999 if fetch_all_years else int(manual_limit)
 
         st.markdown('<div class="section-header" style="font-size:14px;">Steps</div>', unsafe_allow_html=True)
+        # Defaults per user request: only the three core steps checked.
+        # Word, PDF, AI narrative, force-refresh all default OFF.
         do_fetch = st.checkbox("Fetch from SEC EDGAR", value=True, key="rp_step_fetch")
         do_store = st.checkbox("Store in SQLite", value=True, key="rp_step_store")
         do_excel = st.checkbox("Build Excel Model", value=True, key="rp_step_excel")
-        do_word = st.checkbox("Generate Word Report", value=True, key="rp_step_word")
-        do_pdf = st.checkbox("Generate PDF Report", value=True, key="rp_step_pdf")
+        do_word = st.checkbox("Generate Word Report", value=False, key="rp_step_word")
+        do_pdf = st.checkbox("Generate PDF Report", value=False, key="rp_step_pdf")
         do_narr = st.checkbox(
             "Generate AI Narrative (Anthropic API key)",
             value=False, key="rp_step_narr",
@@ -118,21 +142,15 @@ with left:
             help="If unchecked, the pipeline reuses already-stored filings and skips the EDGAR fetch.",
         )
 
+        # Single Run Pipeline button placed BELOW the Steps section.
+        # No second 'Run Whole Watchlist' button - use the Source radio
+        # at the top to switch between single ticker and whole watchlist.
         run_clicked = st.form_submit_button(
             "▶ Run Pipeline",
             type="primary",
             use_container_width=True,
             disabled=ss["pipeline_running"],
         )
-
-    # Separate "Run Whole Watchlist" button outside the form so it works
-    # without form-submit semantics.
-    run_all = st.button(
-        "▶ Run Whole Watchlist",
-        use_container_width=True,
-        disabled=ss["pipeline_running"],
-        key="rp_run_all_btn",
-    )
 
     # Resolve selected_tickers from the freshly committed widget values
     if mode == "Single ticker":
@@ -154,10 +172,6 @@ with left:
         st.error("Pick at least one pipeline step.")
     if run_clicked and not forms_picked:
         st.error("Pick at least one form type.")
-
-    if run_all:
-        selected_tickers = get_effective_watchlist()
-        run_clicked = True
 
     if run_clicked and selected_tickers and steps and forms_picked:
         logger.info(
@@ -296,7 +310,16 @@ with right:
                     ss["pipeline_status"], len(ss["pipeline_files"]),
                 )
 
-        progress_placeholder.progress(progress / 100, text=f"Progress {progress}%")
+        # Animated green progress bar with white % text on black background.
+        # Width animates from 0 -> N% via CSS transition, with a moving
+        # diagonal shimmer overlay while the run is active.
+        bar_html = (
+            '<div class="rp-progress-shell">'
+            '  <div class="rp-progress-fill" style="width:' f'{progress}' '%;"></div>'
+            f'  <div class="rp-progress-text">{progress}%</div>'
+            '</div>'
+        )
+        progress_placeholder.markdown(bar_html, unsafe_allow_html=True)
 
         if ss["pipeline_running"]:
             time.sleep(0.6)
