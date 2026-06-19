@@ -26,7 +26,29 @@ EDGAR_IDENTITY: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Filing fetch defaults
 # ---------------------------------------------------------------------------
-FORMS: list[str] = ["10-K", "10-Q"]
+# Default form types pulled by the pipeline. The pipeline_runner can be
+# asked for any subset of these via the UI multi-select or CLI --form
+# option. Each form is pulled separately and merged into one combined
+# Excel/Word/PDF report (period columns are tagged with the form_type).
+#
+# Note: 8-K and DEF 14A often have no XBRL financial-statement data;
+# they're included so any disclosures they DO carry are stored, and so
+# the run history records every filing for completeness. Empty
+# statement extractions degrade gracefully (the sheet is just empty).
+FORMS: list[str] = [
+    "10-K",         # annual report
+    "10-Q",         # quarterly report
+    "10-K/A",       # 10-K amendment
+    "10-Q/A",       # 10-Q amendment
+    "20-F",         # foreign private issuer annual
+    "6-K",          # foreign private issuer current report
+    "8-K",          # current report (material events)
+    "DEF 14A",      # proxy statement (exec comp, board info)
+]
+# Default subset used when the user picks "Default" in the UI or runs
+# `python main.py run --form default`. These are the two highest-signal
+# forms for financial analysis.
+DEFAULT_RUN_FORMS: list[str] = ["10-K", "10-Q"]
 FILING_LIMIT: int = 5
 
 # Per-request politeness delay (seconds) to respect SEC rate limits

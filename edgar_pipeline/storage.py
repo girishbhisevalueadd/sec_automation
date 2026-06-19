@@ -223,12 +223,24 @@ def load_statements(
     ticker: str,
     stmt_type: str,
     periods: Iterable[str] | None = None,
+    tag_form: bool = True,
 ) -> pd.DataFrame:
-    """Return a wide DataFrame: rows=concept, columns=period."""
+    """Return a wide DataFrame: rows=concept, columns=period.
+
+    When `tag_form` is True (default) each column header is suffixed with
+    the filing's form_type, e.g.  "2025-09-27 [10-K]" or "2025-06-30 [10-Q]",
+    so a single statement can mix annual and quarterly periods without
+    losing the distinction.
+    """
     init_db()
     params: list = [ticker.upper(), stmt_type]
+    # Compose the period label so that pivot columns carry form_type.
+    if tag_form:
+        period_expr = "fd.period || ' [' || f.form_type || ']' AS period"
+    else:
+        period_expr = "fd.period AS period"
     sql = (
-        "SELECT f.period AS filing_period, fd.concept, fd.value, fd.period "
+        f"SELECT f.period AS filing_period, fd.concept, fd.value, {period_expr}, f.form_type "
         "FROM financial_data fd "
         "JOIN filings f ON f.id = fd.filing_id "
         "WHERE f.ticker = ? AND fd.stmt_type = ?"

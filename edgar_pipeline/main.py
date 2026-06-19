@@ -113,13 +113,42 @@ def do_report(ticker: str, fmt: str, form_type: str = "10-K") -> list[Path]:
     return outputs
 
 
-def do_run(ticker: str, form: str = "10-K", limit: int = 5) -> dict:
+def _resolve_forms(form_arg: str) -> list[str]:
+    """Turn a CLI --form value into a list of form strings.
+
+    Accepted values:
+      - "all"      -> every form in config.FORMS
+      - "default"  -> config.DEFAULT_RUN_FORMS (10-K + 10-Q)
+      - "both"     -> alias for "default"
+      - "10-K"     -> single form
+      - "10-K,10-Q,DEF 14A" -> any comma-separated list
+    """
+    s = (form_arg or "").strip().lower()
+    if s in ("all", "*"):
+        return list(getattr(config, "FORMS", ["10-K", "10-Q"]))
+    if s in ("default", "both"):
+        return list(getattr(config, "DEFAULT_RUN_FORMS", ["10-K", "10-Q"]))
+    if "," in form_arg:
+        return [f.strip() for f in form_arg.split(",") if f.strip()]
+    return [form_arg]
+
+
+def do_run(ticker: str, form: str = "default", limit: int = 5) -> dict:
+    """Full pipeline. `form` may be a single form, "default", "both", "all",
+    or a comma-separated list. All picked forms are fetched and merged into
+    one Excel + Word + PDF; period columns are tagged [10-K]/[10-Q]/[8-K]/etc.
+    """
     result = {"ticker": ticker, "fetched": 0, "excel": None, "word": None, "pdf": None, "error": None}
+    forms_to_run = _resolve_forms(form)
+    build_tag = forms_to_run[0] if len(forms_to_run) == 1 else "ALL"
     try:
-        result["fetched"] = do_fetch(ticker, form, limit)
-        excel_path = do_build(ticker, form_type=form)
+        total_fetched = 0
+        for f in forms_to_run:
+            total_fetched += do_fetch(ticker, f, limit)
+        result["fetched"] = total_fetched
+        excel_path = do_build(ticker, form_type=build_tag)
         result["excel"] = str(excel_path) if excel_path else None
-        report_paths = do_report(ticker, "both", form_type=form)
+        report_paths = do_report(ticker, "both", form_type=build_tag)
         for p in report_paths:
             if p.suffix.lower() == ".docx":
                 result["word"] = str(p)
@@ -191,7 +220,15 @@ def cmd_report(ticker: str, fmt: str, form: str):
 
 @cli.command("run")
 @click.option("--ticker", required=True)
-@click.option("--form", default="10-K", show_default=True)
+@click.option(
+    "--form",
+    default="default", show_default=True,
+    help=(
+        "Form(s) to fetch. Accepts: a single form ('10-K'), 'default' or "
+        "'both' (10-K + 10-Q), 'all' (every form in config.FORMS), or a "
+        "comma-separated list ('10-K,10-Q,DEF 14A')."
+    ),
+)
 @click.option("--limit", default=config.FILING_LIMIT, show_default=True, type=int)
 def cmd_run(ticker: str, form: str, limit: int):
     """Full pipeline: fetch -> store -> Excel -> report (Word + PDF)."""

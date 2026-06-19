@@ -80,7 +80,25 @@ with left:
             options=wl_default, default=wl_default, key="rp_multi_tickers",
         )
 
-        form = st.radio("Form type", ["10-K", "10-Q", "Both"], horizontal=True, key="rp_form")
+        # Multi-select every form type we can pull from EDGAR. The pipeline
+        # will fetch each picked form, then combine them into ONE Excel /
+        # Word / PDF with period columns tagged [10-K], [10-Q], [8-K], etc.
+        import config as _cfg
+        _available_forms = getattr(_cfg, "FORMS", ["10-K", "10-Q"])
+        _default_forms = getattr(_cfg, "DEFAULT_RUN_FORMS", ["10-K", "10-Q"])
+        forms_picked = st.multiselect(
+            "Form types to fetch (10-K, 10-Q, 8-K, …)",
+            options=_available_forms,
+            default=_default_forms,
+            key="rp_forms",
+            help=(
+                "Each picked form is fetched separately, then merged into one "
+                "Excel/Word/PDF. Period columns are tagged with [form] so you "
+                "can tell annual vs. quarterly vs. proxy data apart. Forms "
+                "without XBRL (8-K, DEF 14A) produce empty statement sheets "
+                "but their filings are still recorded in the run history."
+            ),
+        )
         limit = st.slider("Filings per form", min_value=1, max_value=10, value=5, key="rp_limit")
 
         st.markdown('<div class="section-header" style="font-size:14px;">Steps</div>', unsafe_allow_html=True)
@@ -134,15 +152,17 @@ with left:
         st.error("Please enter at least one ticker before running.")
     if run_clicked and not steps:
         st.error("Pick at least one pipeline step.")
+    if run_clicked and not forms_picked:
+        st.error("Pick at least one form type.")
 
     if run_all:
         selected_tickers = get_effective_watchlist()
         run_clicked = True
 
-    if run_clicked and selected_tickers and steps:
+    if run_clicked and selected_tickers and steps and forms_picked:
         logger.info(
-            "User triggered pipeline: tickers=%s form=%s limit=%d steps=%s narrative=%s force_refresh=%s",
-            selected_tickers, form, limit, sorted(steps), do_narr, force_refresh,
+            "User triggered pipeline: tickers=%s forms=%s limit=%d steps=%s narrative=%s force_refresh=%s",
+            selected_tickers, forms_picked, limit, sorted(steps), do_narr, force_refresh,
         )
         # Reset state
         ss["pipeline_output"] = []
@@ -155,15 +175,16 @@ with left:
         ss["pipeline_queue_list"] = list(selected_tickers)
         ss["last_run_ts"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Spawn the first ticker; subsequent ones queued for serial execution
-        forms_to_run = ["10-K", "10-Q"] if form == "Both" else [form]
+        # Spawn the first ticker; subsequent ones queued for serial execution.
+        # Whatever forms the user picked are passed AS A LIST to the worker,
+        # which fetches+stores each then builds a single combined Excel/Word/PDF.
+        forms_to_run: list[str] = list(forms_picked)
         ss["pipeline_forms_to_run"] = forms_to_run
-        ss["pipeline_form_idx"] = 0
         first_ticker = selected_tickers[0]
         thread, q, files, timings = start_pipeline_thread(
             ticker=first_ticker,
             steps=steps,
-            form=forms_to_run[0],
+            form=forms_to_run,
             limit=limit,
             use_narrative=do_narr,
             force_refresh=force_refresh,
@@ -236,30 +257,25 @@ with right:
                 ss["pipeline_timings"].extend(ss["pipeline_thread_timings"])
                 ss["pipeline_thread_timings"] = []
 
-            # Move to next form or next ticker
+            # Each spawn now processes ALL configured forms for one ticker,
+            # so on completion we just advance to the next ticker (if any).
             tickers = ss.get("pipeline_queue_list", [])
             forms = ss.get("pipeline_forms_to_run", ["10-K"])
-            form_idx = ss.get("pipeline_form_idx", 0) + 1
             done = False
-            if form_idx < len(forms):
-                ss["pipeline_form_idx"] = form_idx
-                next_ticker = ss.get("pipeline_ticker", tickers[0] if tickers else "")
+            if len(tickers) > 1:
+                tickers = tickers[1:]
+                ss["pipeline_queue_list"] = tickers
+                next_ticker = tickers[0]
             else:
-                ss["pipeline_form_idx"] = 0
-                if len(tickers) > 1:
-                    tickers = tickers[1:]
-                    ss["pipeline_queue_list"] = tickers
-                    next_ticker = tickers[0]
-                else:
-                    done = True
-                    next_ticker = ""
+                done = True
+                next_ticker = ""
 
             if not done:
                 ss["pipeline_ticker"] = next_ticker
                 thread, q, files, timings = start_pipeline_thread(
                     ticker=next_ticker,
                     steps=ss["pipeline_steps"],
-                    form=forms[ss["pipeline_form_idx"]],
+                    form=forms,
                     limit=ss["pipeline_limit"],
                     use_narrative=ss["pipeline_use_narr"],
                     force_refresh=ss.get("pipeline_force_refresh", False),
