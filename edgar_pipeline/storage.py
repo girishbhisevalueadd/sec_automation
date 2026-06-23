@@ -239,25 +239,34 @@ def load_statements(
         period_expr = "fd.period || ' [' || f.form_type || ']' AS period"
     else:
         period_expr = "fd.period AS period"
+    # ORDER BY fd.id ASC preserves the row insertion order, which mirrors
+    # the order each concept appeared in the original SEC filing. The
+    # `sort=False` flag on the downstream pivot keeps that order.
     sql = (
         f"SELECT f.period AS filing_period, fd.concept, fd.value, {period_expr}, f.form_type "
         "FROM financial_data fd "
         "JOIN filings f ON f.id = fd.filing_id "
         "WHERE f.ticker = ? AND fd.stmt_type = ?"
     )
+    suffix_order = " ORDER BY fd.id ASC"
     if periods:
         plist = list(periods)
         sql += f" AND fd.period IN ({','.join('?' for _ in plist)})"
         params.extend(plist)
+    sql += suffix_order
 
     with get_connection() as conn:
         df = pd.read_sql_query(sql, conn, params=params)
     if df.empty:
         return df
 
-    # Pivot to concept x period
+    # Pivot to concept x period. sort=False preserves the row order from
+    # the SQL result (which is ORDER BY fd.id ASC = filing insertion
+    # order). Each concept appears in the same position it had in the
+    # original SEC filing's XBRL document.
     pivot = df.pivot_table(
-        index="concept", columns="period", values="value", aggfunc="last"
+        index="concept", columns="period", values="value", aggfunc="last",
+        sort=False,
     )
     # Custom column order: 10-K filings first (newest -> oldest), then
     # 10-K/A, then 10-Q (newest -> oldest), then 10-Q/A, then everything

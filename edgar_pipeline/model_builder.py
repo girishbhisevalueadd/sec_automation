@@ -369,7 +369,26 @@ def build_excel_model(
         add_yoy=False,
     )
     _write_ratios_sheet(wb.create_sheet("Key Ratios"), ratios_df)
-    _write_data_sheet(wb.create_sheet("Data"), summary_dict)
+
+    # The Data sheet shows raw line items in their NATURAL SEC filing
+    # order, not the canonical financial-statement order used by the
+    # main sheets. Reload directly from storage so we bypass the
+    # processor.reorder_statement step that the other sheets get.
+    # reset_index() promotes the concept name to a visible first column
+    # so the line items render alongside their values.
+    try:
+        import storage as _storage
+        raw_dump: dict[str, pd.DataFrame] = {}
+        for stmt in ("income", "balance", "cashflow", "debt",
+                     "segment", "debt_maturity", "leases", "sbc", "tax_detail"):
+            df_raw = _storage.load_statements(ticker, stmt)
+            if df_raw is not None and not df_raw.empty:
+                df_raw = df_raw.reset_index().rename(columns={"concept": "Line Item"})
+            raw_dump[stmt] = df_raw
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Falling back to reordered summary for Data sheet: %s", e)
+        raw_dump = summary_dict
+    _write_data_sheet(wb.create_sheet("Data"), raw_dump)
 
     today = datetime.utcnow().strftime("%Y%m%d")
     form_safe = form_type.replace("-", "")
