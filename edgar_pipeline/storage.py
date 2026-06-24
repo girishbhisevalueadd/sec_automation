@@ -52,6 +52,17 @@ SCHEMA = [
         FOREIGN KEY(filing_id) REFERENCES filings(id) ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS filing_tables (
+        filing_id INTEGER NOT NULL,
+        seq INTEGER NOT NULL,
+        n_rows INTEGER,
+        n_cols INTEGER,
+        rows_json TEXT,
+        PRIMARY KEY (filing_id, seq),
+        FOREIGN KEY(filing_id) REFERENCES filings(id) ON DELETE CASCADE
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_findata_filing ON financial_data(filing_id)",
     "CREATE INDEX IF NOT EXISTS idx_findata_stmt ON financial_data(stmt_type)",
     "CREATE INDEX IF NOT EXISTS idx_filings_ticker ON filings(ticker)",
@@ -198,8 +209,27 @@ def save_filing(filing_dict: dict) -> int:
                 text_rows,
             )
 
-    logger.info("Saved filing %s %s %s (id=%s, lines=%d, text_sections=%d)",
-                ticker, form_type, period, filing_id, len(all_rows), len(text_rows))
+        # Save every <table> in the filing's HTML, in document order. The
+        # Data sheet of the Excel model renders these verbatim so investors
+        # see the same tables in the same order as the SEC PDF.
+        conn.execute("DELETE FROM filing_tables WHERE filing_id=?", (filing_id,))
+        all_tables = filing_dict.get("all_tables") or []
+        if all_tables:
+            import json as _json
+            tbl_rows = [
+                (filing_id, int(t.get("seq", i)), int(t.get("n_rows", 0)),
+                 int(t.get("n_cols", 0)), _json.dumps(t.get("rows", []), ensure_ascii=False))
+                for i, t in enumerate(all_tables)
+            ]
+            conn.executemany(
+                "INSERT INTO filing_tables (filing_id, seq, n_rows, n_cols, rows_json) "
+                "VALUES (?, ?, ?, ?, ?)",
+                tbl_rows,
+            )
+
+    logger.info("Saved filing %s %s %s (id=%s, lines=%d, text_sections=%d, tables=%d)",
+                ticker, form_type, period, filing_id, len(all_rows), len(text_rows),
+                len(all_tables))
     return filing_id
 
 
@@ -297,6 +327,60 @@ def load_statements(
     except Exception:  # noqa: BLE001
         pass
     return pivot
+
+
+def load_filing_tables(
+    ticker: str,
+    prefer_forms: Iterable[str] = ("10-K", "10-K/A", "20-F", "10-Q", "10-Q/A", "8-K", "DEF 14A", "6-K"),
+) -> list[dict]:
+    """Return every <table> stored for the most recent filing of `ticker`,
+    preferring the first form in `prefer_forms` that has data. Tables come
+    back in document order (seq ASC).
+
+    Each entry: {"seq": int, "n_rows": int, "n_cols": int,
+                 "rows": [[str, ...], ...],
+                 "form_type": str, "period": str}.
+    Empty list when nothing is stored.
+    """
+    init_db()
+    import json as _json
+    with get_connection() as conn:
+        for form in prefer_forms:
+            # Pick the latest filing of this form that actually has tables.
+            row = conn.execute(
+                "SELECT f.id, f.form_type, f.period "
+                "FROM filings f "
+                "WHERE f.ticker=? AND f.form_type=? "
+                "  AND EXISTS (SELECT 1 FROM filing_tables ft WHERE ft.filing_id=f.id) "
+                "ORDER BY f.period DESC LIMIT 1",
+                (ticker.upper(), form),
+            ).fetchone()
+            if row is None:
+                continue
+            filing_id = int(row["id"])
+            form_type = row["form_type"]
+            period = row["period"]
+            tables = conn.execute(
+                "SELECT seq, n_rows, n_cols, rows_json "
+                "FROM filing_tables WHERE filing_id=? ORDER BY seq ASC",
+                (filing_id,),
+            ).fetchall()
+            out: list[dict] = []
+            for t in tables:
+                try:
+                    rows = _json.loads(t["rows_json"]) if t["rows_json"] else []
+                except Exception:  # noqa: BLE001
+                    rows = []
+                out.append({
+                    "seq": int(t["seq"]),
+                    "n_rows": int(t["n_rows"] or 0),
+                    "n_cols": int(t["n_cols"] or 0),
+                    "rows": rows,
+                    "form_type": form_type,
+                    "period": period,
+                })
+            return out
+    return []
 
 
 def get_filing_history(ticker: str) -> pd.DataFrame:

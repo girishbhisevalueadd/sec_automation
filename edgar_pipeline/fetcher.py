@@ -340,6 +340,71 @@ def extract_mda_text(filing: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Full-fidelity HTML table extraction (every <table> in document order)
+# ---------------------------------------------------------------------------
+def extract_all_html_tables(filing: Any) -> list[dict]:
+    """Walk every <table> element in the filing's primary HTML document
+    and return its cell grid, preserving the order tables appear in the
+    SEC filing. This is the "as-is" dump the Data sheet uses.
+
+    Returns a list of dicts in document order:
+        [{"seq": 0, "n_rows": ..., "n_cols": ..., "rows": [[...], ...]}, ...]
+
+    Empty tables (no <tr>) are skipped; single-cell tables are kept so the
+    Excel matches the filing line-for-line.
+    """
+    try:
+        html = filing.html() if callable(getattr(filing, "html", None)) else getattr(filing, "html", None)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("filing.html() failed: %s", e)
+        return []
+    if not html:
+        return []
+    if isinstance(html, bytes):
+        try:
+            html = html.decode("utf-8", errors="ignore")
+        except Exception:  # noqa: BLE001
+            html = html.decode("latin-1", errors="ignore")
+    if not isinstance(html, str):
+        return []
+
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        logger.warning("beautifulsoup4 not installed - cannot extract HTML tables")
+        return []
+
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except Exception:  # noqa: BLE001
+        soup = BeautifulSoup(html, "html.parser")
+
+    out: list[dict] = []
+    seq = 0
+    for tbl in soup.find_all("table"):
+        rows: list[list[str]] = []
+        for tr in tbl.find_all("tr"):
+            cells: list[str] = []
+            for cell in tr.find_all(["td", "th"]):
+                txt = cell.get_text(separator=" ", strip=True)
+                # Collapse whitespace
+                txt = re.sub(r"\s+", " ", txt)
+                cells.append(txt)
+            if cells:
+                rows.append(cells)
+        if not rows:
+            continue
+        n_cols = max(len(r) for r in rows)
+        # Right-pad short rows so the Excel grid stays rectangular
+        for r in rows:
+            if len(r) < n_cols:
+                r.extend([""] * (n_cols - len(r)))
+        out.append({"seq": seq, "n_rows": len(rows), "n_cols": n_cols, "rows": rows})
+        seq += 1
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Retry-wrapped filings list fetch
 # ---------------------------------------------------------------------------
 def _fetch_filings_with_retry(ticker: str, form: str, limit: int):
@@ -405,6 +470,7 @@ def fetch_company_filings(ticker: str, form: str = "10-K", limit: int = 5) -> li
             income_df = balance_df = cashflow_df = debt_df = pd.DataFrame()
             segment_df = debt_maturity_df = lease_df = sbc_df = tax_df = pd.DataFrame()
             risk_text = mda_text = ""
+            all_tables: list[dict] = []
             if xbrl is not None:
                 income_df = _statement_to_dataframe(xbrl, "income")
                 balance_df = _statement_to_dataframe(xbrl, "balance")
@@ -424,6 +490,15 @@ def fetch_company_filings(ticker: str, form: str = "10-K", limit: int = 5) -> li
             except Exception as e:  # noqa: BLE001
                 logger.warning("filing text extraction failed for %s: %s", ticker, e)
 
+            # Full-fidelity HTML table dump - every <table> in document order.
+            # Feeds the Data sheet of the Excel model so investors see the
+            # same tables in the same order as the SEC PDF.
+            try:
+                all_tables = extract_all_html_tables(filing)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("HTML table extraction failed for %s %s: %s", ticker, form, e)
+                all_tables = []
+
             results.append({
                 "ticker": ticker.upper(),
                 "form_type": form,
@@ -441,14 +516,16 @@ def fetch_company_filings(ticker: str, form: str = "10-K", limit: int = 5) -> li
                 "tax_detail": tax_df,
                 "risk_factors_text": risk_text,
                 "mda_text": mda_text,
+                "all_tables": all_tables,
                 "raw_filing_url": str(raw_url),
             })
             logger.info(
-                "  parsed %s %s @ %s (income=%s, bal=%s, cf=%s, debt=%s, seg=%s, mat=%s, lease=%s, sbc=%s, tax=%s, risk=%dchars, mda=%dchars)",
+                "  parsed %s %s @ %s (income=%s, bal=%s, cf=%s, debt=%s, seg=%s, mat=%s, lease=%s, sbc=%s, tax=%s, risk=%dchars, mda=%dchars, tables=%d)",
                 ticker, form, period or "?",
                 income_df.shape, balance_df.shape, cashflow_df.shape, debt_df.shape,
                 segment_df.shape, debt_maturity_df.shape, lease_df.shape,
                 sbc_df.shape, tax_df.shape, len(risk_text), len(mda_text),
+                len(all_tables),
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("Skipping a %s %s filing due to error: %s", ticker, form, e)

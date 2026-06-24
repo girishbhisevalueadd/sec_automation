@@ -188,16 +188,16 @@ def _write_cover(ws: Worksheet, ticker: str) -> None:
     ws.cell(row=9, column=2, value="Sheets in this workbook:").font = Font(bold=True)
     contents = [
         "1. Cover - this page",
-        "2. Income Statement",
-        "3. Balance Sheet",
-        "4. Cash Flow Statement",
-        "5. Debt Schedule (incl. Maturity Ladder)",
-        "6. Segment & Geographic Detail",
-        "7. Lease Commitments",
-        "8. Stock-Based Compensation",
-        "9. Income Tax Detail",
-        "10. Key Ratios",
-        "11. Data (raw normalized dump for audit)",
+        "2. Data - every table from the SEC filing, in document order",
+        "3. Income Statement",
+        "4. Balance Sheet",
+        "5. Cash Flow Statement",
+        "6. Debt Schedule (incl. Maturity Ladder)",
+        "7. Segment & Geographic Detail",
+        "8. Lease Commitments",
+        "9. Stock-Based Compensation",
+        "10. Income Tax Detail",
+        "11. Key Ratios",
     ]
     for i, line in enumerate(contents, start=10):
         ws.cell(row=i, column=2, value=line)
@@ -275,33 +275,70 @@ def _write_ratios_sheet(ws: Worksheet, ratios_df: pd.DataFrame) -> None:
     _write_footer(ws, ws.max_row + 2, trend_col_idx)
 
 
-def _write_data_sheet(ws: Worksheet, summary_dict: dict[str, pd.DataFrame]) -> None:
-    ws.cell(row=1, column=1, value="Raw Normalized Data Dump").font = Font(size=14, bold=True)
-    row_cursor = 3
-    for stmt_name, df in summary_dict.items():
-        ws.cell(row=row_cursor, column=1, value=stmt_name.upper()).font = Font(bold=True, color="FFFFFF")
-        ws.cell(row=row_cursor, column=1).fill = HEADER_FILL
-        row_cursor += 1
-        if df is None or df.empty:
-            ws.cell(row=row_cursor, column=1, value="(no data)")
-            row_cursor += 2
+def _write_data_sheet(ws: Worksheet, tables: list[dict], ticker: str) -> None:
+    """Dump every <table> from the SEC filing in document order.
+
+    `tables` is the list returned by `storage.load_filing_tables`. Each
+    table renders as a small block: a bold "Table N (R rows x C cols)"
+    header, then the raw cell grid, then a blank separator row. This
+    matches the user's requirement: "all kind of tables (no matter how
+    many columns or rows present) ... in exact same order as they are
+    present in fillings", with no XBRL category sub-sections.
+    """
+    title = f"{ticker.upper()} - All Tables (as filed)"
+    ws.cell(row=1, column=1, value=title).font = Font(
+        size=14, bold=True, color=config.COLOR_HEADER_FILL
+    )
+    if not tables:
+        ws.cell(row=3, column=1, value="No tables stored. Re-run the pipeline to populate.")
+        _autosize(ws, 4)
+        _write_footer(ws, 5, 4)
+        return
+
+    form_type = tables[0].get("form_type", "")
+    period = tables[0].get("period", "")
+    subtitle = f"Source: {form_type} filing dated {period} - {len(tables)} tables in document order"
+    ws.cell(row=2, column=1, value=subtitle).font = Font(italic=True, size=10, color="666666")
+
+    row_cursor = 4
+    max_col_seen = 1
+    for tbl in tables:
+        rows = tbl.get("rows") or []
+        n_rows = tbl.get("n_rows", len(rows))
+        n_cols = tbl.get("n_cols", max((len(r) for r in rows), default=0))
+        seq = tbl.get("seq", 0)
+        if not rows:
             continue
-        cols = list(df.columns)
-        for c_idx, c in enumerate(cols, start=1):
-            ws.cell(row=row_cursor, column=c_idx, value=str(c)).font = Font(bold=True)
+
+        header_cell = ws.cell(
+            row=row_cursor, column=1,
+            value=f"Table {seq + 1} ({n_rows} rows x {n_cols} cols)",
+        )
+        header_cell.font = HEADER_FONT
+        header_cell.fill = HEADER_FILL
+        if n_cols > 1:
+            last_letter = get_column_letter(min(n_cols, 1024))
+            try:
+                ws.merge_cells(f"A{row_cursor}:{last_letter}{row_cursor}")
+            except Exception:  # noqa: BLE001
+                pass
         row_cursor += 1
-        for _, r in df.iterrows():
-            for c_idx, c in enumerate(cols, start=1):
-                v = r[c]
-                if isinstance(v, float):
-                    cell = ws.cell(row=row_cursor, column=c_idx, value=v)
-                    cell.number_format = "#,##0"
-                else:
-                    ws.cell(row=row_cursor, column=c_idx, value=str(v) if pd.notna(v) else "")
+
+        for r in rows:
+            for c_idx, cell_val in enumerate(r, start=1):
+                if cell_val is None or cell_val == "":
+                    continue
+                cell = ws.cell(row=row_cursor, column=c_idx, value=str(cell_val))
+                cell.alignment = LEFT if c_idx == 1 else RIGHT
             row_cursor += 1
+
+        max_col_seen = max(max_col_seen, n_cols)
+        # blank separator row between tables
         row_cursor += 1
-    _autosize(ws, 8)
-    _write_footer(ws, row_cursor + 1, 8)
+
+    ws.freeze_panes = "A4"
+    _autosize(ws, min(max_col_seen, 20))
+    _write_footer(ws, row_cursor + 1, min(max_col_seen, 20))
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +354,18 @@ def build_excel_model(
     cover = wb.active
     cover.title = "Cover"
     _write_cover(cover, ticker)
+
+    # Data sheet is at position 2 (right after Cover). It renders every
+    # <table> from the latest SEC filing in document order with no
+    # categorization - users wanted "all kinds of tables in exact same
+    # order as they are present in fillings".
+    try:
+        import storage as _storage
+        filing_tables = _storage.load_filing_tables(ticker)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not load filing tables for %s: %s", ticker, e)
+        filing_tables = []
+    _write_data_sheet(wb.create_sheet("Data"), filing_tables, ticker)
 
     _write_statement_sheet(
         wb.create_sheet("Income Statement"),
@@ -369,33 +418,6 @@ def build_excel_model(
         add_yoy=False,
     )
     _write_ratios_sheet(wb.create_sheet("Key Ratios"), ratios_df)
-
-    # The Data sheet shows raw line items in their NATURAL SEC filing
-    # order, not the canonical financial-statement order used by the
-    # main sheets. Reload directly from storage so we bypass the
-    # processor.reorder_statement step that the other sheets get.
-    # reset_index() promotes the concept name to a visible first column
-    # so the line items render alongside their values.
-    # Section order mirrors how tables typically appear in a 10-K /
-    # 10-Q PDF: Income Statement first, then revenue/segment
-    # disaggregation (which usually appears right under or after the
-    # income statement in MD&A), then Balance Sheet, then Cash Flow,
-    # then debt/lease/SBC/tax notes. The previous ordering placed
-    # segment data after balance + cashflow, which is why a "page 25"
-    # disaggregation table ended up around row 551 of the Data sheet.
-    try:
-        import storage as _storage
-        raw_dump: dict[str, pd.DataFrame] = {}
-        for stmt in ("income", "segment", "balance", "cashflow",
-                     "debt", "debt_maturity", "leases", "sbc", "tax_detail"):
-            df_raw = _storage.load_statements(ticker, stmt)
-            if df_raw is not None and not df_raw.empty:
-                df_raw = df_raw.reset_index().rename(columns={"concept": "Line Item"})
-            raw_dump[stmt] = df_raw
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Falling back to reordered summary for Data sheet: %s", e)
-        raw_dump = summary_dict
-    _write_data_sheet(wb.create_sheet("Data"), raw_dump)
 
     today = datetime.utcnow().strftime("%Y%m%d")
     form_safe = form_type.replace("-", "")
