@@ -376,11 +376,18 @@ def build_excel_model(
     # processor.reorder_statement step that the other sheets get.
     # reset_index() promotes the concept name to a visible first column
     # so the line items render alongside their values.
+    # Section order mirrors how tables typically appear in a 10-K /
+    # 10-Q PDF: Income Statement first, then revenue/segment
+    # disaggregation (which usually appears right under or after the
+    # income statement in MD&A), then Balance Sheet, then Cash Flow,
+    # then debt/lease/SBC/tax notes. The previous ordering placed
+    # segment data after balance + cashflow, which is why a "page 25"
+    # disaggregation table ended up around row 551 of the Data sheet.
     try:
         import storage as _storage
         raw_dump: dict[str, pd.DataFrame] = {}
-        for stmt in ("income", "balance", "cashflow", "debt",
-                     "segment", "debt_maturity", "leases", "sbc", "tax_detail"):
+        for stmt in ("income", "segment", "balance", "cashflow",
+                     "debt", "debt_maturity", "leases", "sbc", "tax_detail"):
             df_raw = _storage.load_statements(ticker, stmt)
             if df_raw is not None and not df_raw.empty:
                 df_raw = df_raw.reset_index().rename(columns={"concept": "Line Item"})
